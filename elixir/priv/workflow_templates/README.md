@@ -30,6 +30,7 @@ tapd/cnb/opencode
 tapd/cnb/claude_code
 tapd/cnb/codebuddy_code
 tapd/github/codex
+tapd/git/codex
 ```
 
 See [`../workflow_extensions/README.md`](../workflow_extensions/README.md) for
@@ -67,7 +68,8 @@ Segments:
 - `tracker`: the issue/story system that drives orchestration, such as `linear`,
   `tapd`, or `memory`.
 - `source`: the workflow's external work source. Use repo provider names such as
-  `github` or `cnb` for workflows that clone, push, open PRs, or merge code.
+  `github` or `cnb` for workflows that use hosting-platform APIs, or `git` for
+  clone/commit/push-only workflows that stop before human review.
   Use `no_repo` for workflows that do not perform repo clone, push, PR, or merge
   operations.
 - `agent-provider`: the canonical agent runtime/provider kind, such as `codex`,
@@ -157,6 +159,7 @@ tapd/cnb/opencode
 tapd/cnb/claude_code
 tapd/cnb/codebuddy_code
 tapd/github/codex
+tapd/git/codex
 ```
 
 内置 extension 资产边界见
@@ -188,7 +191,7 @@ route、readiness、approval、completion 或 typed-tool safety 决策的权威�
 | 片段 | 含义 | 示例 |
 | --- | --- | --- |
 | `tracker` | 提供任务的项目系统或本地模拟任务源 | `linear`、`tapd`、`memory` |
-| `source` | 仓库或代码平台来源；没有真实仓库时使用 `no_repo` | `github`、`cnb`、`no_repo` |
+| `source` | 仓库或代码平台来源；仅做 clone/commit/push 时使用 `git`，没有真实仓库时使用 `no_repo` | `github`、`cnb`、`git`、`no_repo` |
 | `agent-provider` | 执行任务的 AI Agent 或本地 mock | `codex`、`claude_code`、`opencode`、`codebuddy_code`、`mock` |
 | `variant` | 可选的特殊版本 | `canary` |
 

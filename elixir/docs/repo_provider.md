@@ -49,6 +49,8 @@ Required host tools:
 
 Provider credentials:
 
+- Git-only: an SSH key or other Git-native credential accepted by the remote;
+  no hosting-platform API token or CLI is required
 - GitHub: `GH_TOKEN`, `GITHUB_TOKEN`, or an already-authenticated `gh` keyring
   with access to the target repository and PR checks
 - CNB: `CNB_TOKEN`
@@ -80,6 +82,29 @@ authorization for the target repository's build APIs.
 
 It delegates to `symphony repo` and does not perform PR, review, check, or
 provider merge operations.
+
+## Git-Only Provider
+
+Set `repo.provider.kind: git` when the repository host is used only as a Git
+remote. `SymphonyElixir.RepoProvider.Git.Adapter` declares no optional
+capabilities, so it contributes no change-proposal, review, check, pipeline,
+approval, merge, or hosting-API typed tools. It also performs no `gh`, `glab`,
+or token preflight. Repo Core still contributes `repo_checkout`, `repo_diff`,
+`repo_commit`, and `repo_push`.
+
+The bundled `tapd/git/codex` template uses this mode. Configure
+`SOURCE_REPO_URL`, `SOURCE_REPO_BASE_BRANCH`, and
+`SOURCE_REPO_BRANCH_WORK_PREFIX`; do not configure
+`SOURCE_REPO_PROVIDER_REPOSITORY`, provider API base URLs, or a GitLab API
+token. The SSH identity must have read access plus write access to the allowed
+work-branch prefix, while the default branch should remain protected from
+direct pushes.
+
+Before production use, validate `ssh -T`, `git ls-remote`, host-key trust, DNS
+and network access, commit author configuration, and a clone/commit/push/SHA
+round trip against a disposable repository or branch. This is a Git smoke,
+not a repo-provider smoke; do not point the repo-provider smoke runner at the
+zero-capability `git` adapter.
 
 ## Repo-Provider Helper
 

@@ -1,0 +1,5 @@
+* text=auto eol=lf
+
+# Keep Windows command scripts native when checked out on Windows.
+*.bat text eol=crlf
+*.cmd text eol=crlf

@@ -285,3 +285,28 @@ the configured review or terminal raw state.
 
 Repo-provider smoke validation is documented in
 [`repo_provider.md`](./repo_provider.md).
+
+## Git-Only Workflow Validation
+
+The `tapd/git/codex` template intentionally has no repo-provider API smoke.
+Its local contract coverage validates template discovery and rendering,
+zero provider capabilities, the positive Repo Core inventory
+(`repo_checkout`, `repo_diff`, `repo_commit`, `repo_push`), and the absence of
+change-proposal/review/check/merge tools. The Repo Core dynamic-tool test uses
+a local bare Git repository to exercise branch creation, diff, commit, push,
+and equality of local and published head SHAs without external API access.
+
+Run the focused checks with:
+
+```bash
+mix test test/symphony_elixir/repo_provider_git_adapter_contract_test.exs
+mix test test/symphony_elixir/repo_dynamic_tool_test.exs
+mix test test/symphony_elixir/workflow_templates_test.exs
+```
+
+A real SSH write smoke is separate and destructive. Run it only with an
+explicitly approved disposable remote branch after the operator has supplied
+the SSH identity, trusted host key, real default branch, allowed branch prefix,
+and TAPD raw review/development states. Verify the remote branch SHA equals
+local `HEAD`; do not create an MR, call a hosting API, push the default branch,
+or use force push as part of that smoke.

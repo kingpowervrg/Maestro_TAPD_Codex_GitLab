@@ -7,6 +7,7 @@ defmodule SymphonyElixir.RepoProviderTest do
   alias SymphonyElixir.RepoProvider.Config, as: RepoConfig
   alias SymphonyElixir.RepoProvider.ConfigValidator
   alias SymphonyElixir.RepoProvider.Error
+  alias SymphonyElixir.RepoProvider.Git
   alias SymphonyElixir.RepoProvider.GitHub
   alias SymphonyElixir.RepoProvider.Kinds
   alias SymphonyElixir.RepoProvider.Memory
@@ -16,10 +17,12 @@ defmodule SymphonyElixir.RepoProviderTest do
   test "supports known provider kinds and adapter lookup" do
     assert Enum.sort(RepoProvider.supported_kinds()) == Enum.sort(Kinds.built_in())
     assert RepoProvider.adapter_for(Kinds.cnb()) == CNB.Adapter
+    assert RepoProvider.adapter_for(Kinds.git()) == Git.Adapter
     assert RepoProvider.adapter_for(Kinds.github()) == GitHub.Adapter
     assert RepoProvider.adapter_for("gitlab") == nil
     assert RepoProvider.adapter_for(:github) == nil
     assert RepoProvider.default_kind() == Kinds.github()
+    assert Kinds.label(Kinds.git()) == "Git"
   end
 
   test "centralizes normalized check-run status contract" do
@@ -49,6 +52,7 @@ defmodule SymphonyElixir.RepoProviderTest do
   test "validates provider config and rejects unsupported kinds" do
     assert :ok == RepoProvider.validate_config(%{provider: %{kind: "github"}})
     assert :ok == RepoProvider.validate_config(%{provider: %{kind: "cnb"}})
+    assert :ok == RepoProvider.validate_config(%{provider: %{kind: "git"}})
 
     assert {:error, %Error{code: :unsupported_provider, provider: "gitlab", operation: :validate_config}} =
              RepoProvider.validate_config(%{provider: %{kind: "gitlab"}})
@@ -145,6 +149,7 @@ defmodule SymphonyElixir.RepoProviderTest do
 
     assert RepoProvider.capabilities(%{provider: %{kind: "github"}}) == all_capabilities
     assert RepoProvider.capabilities(%{provider: %{kind: "cnb"}}) == cnb_capabilities
+    assert RepoProvider.capabilities(%{provider: %{kind: "git"}}) == []
     assert RepoProvider.capabilities(%{provider: %{kind: "memory"}}) == all_capabilities
     assert RepoProvider.capabilities(%{provider: %{kind: "gitlab"}}) == []
 
@@ -153,6 +158,7 @@ defmodule SymphonyElixir.RepoProviderTest do
     assert RepoProvider.supports?(%{provider: %{kind: "cnb"}}, :healthcheck)
     refute RepoProvider.supports?(%{provider: %{kind: "cnb"}}, :pr_add_label)
     refute RepoProvider.supports?(%{provider: %{kind: "cnb"}}, :pr_submit_review)
+    refute RepoProvider.supports?(%{provider: %{kind: "git"}}, :pr_view)
     refute RepoProvider.supports?(%{provider: %{kind: "gitlab"}}, :pr_view)
   end
 

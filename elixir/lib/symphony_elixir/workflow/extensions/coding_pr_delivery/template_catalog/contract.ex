@@ -37,7 +37,8 @@ defmodule SymphonyElixir.Workflow.Extensions.CodingPrDelivery.TemplateCatalog.Co
         credential_account_id: @default_account_id
       ),
       entry("tapd/cnb/claude_code", TrackerKinds.tapd(), RepoProviderKinds.cnb(), AgentProviderKinds.claude_code()),
-      entry("tapd/github/codex", TrackerKinds.tapd(), RepoProviderKinds.github(), AgentProviderKinds.codex())
+      entry("tapd/github/codex", TrackerKinds.tapd(), RepoProviderKinds.github(), AgentProviderKinds.codex()),
+      entry("tapd/git/codex", TrackerKinds.tapd(), RepoProviderKinds.git(), AgentProviderKinds.codex())
     ]
   end
 

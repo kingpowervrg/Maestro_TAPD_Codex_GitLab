@@ -174,8 +174,10 @@ defmodule SymphonyElixir.WorkflowTemplatesTest do
       TemplateAssets.app_priv_root!(" ")
     end
 
+    external_absolute_path = Path.join(Path.expand(System.tmp_dir!()), "templates")
+
     assert_raise ArgumentError, ~r/must be relative/, fn ->
-      TemplateAssets.app_priv_root!("/tmp/templates")
+      TemplateAssets.app_priv_root!(external_absolute_path)
     end
 
     assert_raise ArgumentError, ~r/must stay under the application priv directory/, fn ->
@@ -507,7 +509,8 @@ defmodule SymphonyElixir.WorkflowTemplatesTest do
 
     for partial_ref <- [
           "_partials/tracker/linear_workpad_storage_notes.md",
-          "_partials/tracker/tapd_workpad_contract.md"
+          "_partials/tracker/tapd_workpad_contract.md",
+          "_partials/tracker/tapd_git_only_workpad_contract.md"
         ] do
       partial = partial_ref |> partial_ref_path!() |> File.read!()
 
@@ -569,8 +572,10 @@ defmodule SymphonyElixir.WorkflowTemplatesTest do
     assert template =~ "A failed read/write under `/repo/...` is a path-selection error"
     assert template =~ "Retry with workspace-relative `repo/...`"
 
-    assert template =~
-             "Missing commits, no diff, or a PR-create failure caused by no branch changes\n  is incomplete execution"
+    assert Regex.match?(
+             ~r/Missing commits, no diff, or a PR-create failure caused by no branch changes\r?\n  is incomplete execution/,
+             template
+           )
 
     assert template =~ "Completion bar before review handoff"
 
@@ -706,6 +711,7 @@ defmodule SymphonyElixir.WorkflowTemplatesTest do
   test "TAPD workflow templates use typed tracker tools as the routine path" do
     for path <- tapd_template_paths() do
       assert {:ok, %{config: config, prompt: prompt}} = Workflow.load(path)
+      git_only? = get_in(config, ["repo", "provider", "kind"]) == RepoProviderKinds.git()
 
       assert get_in(config, [
                "workflow",
@@ -717,7 +723,7 @@ defmodule SymphonyElixir.WorkflowTemplatesTest do
                true
 
       assert get_in(config, ["workflow", "profile", "options", "requirements", "typed_repo_tools"]) ==
-               true
+               not git_only?
 
       assert prompt =~ "{{ runtime.tool_inventory }}"
       assert prompt =~ "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/skills/tracker/tapd/SKILL.md"
@@ -727,33 +733,41 @@ defmodule SymphonyElixir.WorkflowTemplatesTest do
                prompt
              )
 
-      assert prompt =~ "Use inventory-listed repo-provider typed tools for routine PR"
-      assert prompt =~ "tracker.create_follow_up_issue"
-      assert prompt =~ "tracker.add_issue_relation"
-      assert prompt =~ "tracker.save_issue_dependency"
-      assert prompt =~ "tracker.provider_diagnostics"
-      assert prompt =~ "repo.create_or_update_change_proposal"
-      assert prompt =~ "repo.change_proposal_snapshot"
-      assert prompt =~ "repo.read_change_proposal_discussion"
-      assert prompt =~ "actionableItems"
-      assert prompt =~ "unresolvedFeedbackSummary"
-      assert prompt =~ "unresolvedFeedbackSummary.unresolvedItems"
-      assert prompt =~ "nextResponseActions"
-      assert prompt =~ "responseAction"
-      assert prompt =~ "prefilledArguments"
-      assert prompt =~ "requiredArguments"
-      assert prompt =~ "repo_add_change_proposal_comment"
-      assert prompt =~ "repo_reply_change_proposal_review_comment"
-      assert prompt =~ "repo_commit.mode"
-      assert prompt =~ "`all` or `staged`"
-      assert prompt =~ "do not\nsend helper command names or aliases such as `stage_all`"
-      assert prompt =~ "repo_checkout.mode"
-      assert prompt =~ "`create_or_switch`, `create`, or `switch`"
-      assert prompt =~ "Do not send helper-style aliases such as `create_working_branch`"
-      assert prompt =~ "typed-tool response on the original PR/thread"
+      unless git_only? do
+        assert prompt =~ "Use inventory-listed repo-provider typed tools for routine PR"
+        assert prompt =~ "tracker.create_follow_up_issue"
+        assert prompt =~ "tracker.add_issue_relation"
+        assert prompt =~ "tracker.save_issue_dependency"
+        assert prompt =~ "tracker.provider_diagnostics"
+        assert prompt =~ "repo.create_or_update_change_proposal"
+        assert prompt =~ "repo.change_proposal_snapshot"
+        assert prompt =~ "repo.read_change_proposal_discussion"
+        assert prompt =~ "actionableItems"
+        assert prompt =~ "unresolvedFeedbackSummary"
+        assert prompt =~ "unresolvedFeedbackSummary.unresolvedItems"
+        assert prompt =~ "nextResponseActions"
+        assert prompt =~ "responseAction"
+        assert prompt =~ "prefilledArguments"
+        assert prompt =~ "requiredArguments"
+        assert prompt =~ "repo_add_change_proposal_comment"
+        assert prompt =~ "repo_reply_change_proposal_review_comment"
+        assert prompt =~ "repo_commit.mode"
 
-      assert prompt =~
-               "Do not rely only on a new PR, commit message, or workpad note to close out human feedback."
+        assert Regex.match?(
+                 ~r/do not\r?\nsend helper command names or aliases such as `stage_all`/,
+                 prompt
+               )
+
+        assert prompt =~ "repo_checkout.mode"
+        assert prompt =~ "Do not send helper-style aliases such as `create_working_branch`"
+        assert prompt =~ "typed-tool response on the original PR/thread"
+
+        assert prompt =~
+                 "Do not rely only on a new PR, commit message, or workpad note to close out human feedback."
+      end
+
+      assert prompt =~ "`all` or `staged`"
+      assert prompt =~ "`create_or_switch`"
 
       assert prompt =~ "workspace-root `.symphony-tapd-workpad.md`"
       assert prompt =~ "`../.symphony-tapd-workpad.md`"
@@ -780,6 +794,58 @@ defmodule SymphonyElixir.WorkflowTemplatesTest do
       refute prompt =~ "repo-provider pr-review-comments"
       refute prompt =~ "repo-provider pr-reviews"
     end
+  end
+
+  test "TAPD Git-only Codex template exposes repo-core tools without change-proposal tools" do
+    template_alias = "tapd/git/codex"
+
+    assert template_alias in Templates.aliases()
+    assert {:ok, path} = Templates.resolve(template_alias)
+    assert {:ok, %{config: config, prompt: prompt}} = Workflow.load(path)
+    assert {:ok, settings} = ConfigSchema.parse(config)
+
+    assert get_in(config, ["workflow", "profile", "options", "requirements"]) == %{
+             "change_proposal" => false,
+             "typed_repo_tools" => false,
+             "typed_tracker_tools" => true
+           }
+
+    assert settings.repo.provider.kind == RepoProviderKinds.git()
+    assert settings.tracker.lifecycle["active_states"] == ["status_4", "developing"]
+    assert :ok == SymphonyElixir.RepoProvider.validate_config(settings.repo)
+
+    tool_context =
+      SymphonyElixir.Agent.DynamicTool.capture_context(
+        dynamic_tool_sources: [
+          {SymphonyElixir.Repo.DynamicToolSource, settings.repo},
+          {SymphonyElixir.RepoProvider.DynamicToolSource, settings.repo}
+        ]
+      )
+
+    tool_names =
+      tool_context
+      |> SymphonyElixir.Agent.DynamicTool.Context.tool_specs()
+      |> Enum.map(&Map.fetch!(&1, "name"))
+
+    assert Enum.sort(tool_names) == Enum.sort(~w(repo_checkout repo_diff repo_commit repo_push))
+    refute Enum.any?(tool_names, &String.contains?(&1, "change_proposal"))
+    refute Enum.any?(tool_names, &(&1 =~ ~r/(review|checks|merge|land)/))
+
+    for forbidden_tool <- [
+          "repo_create_or_update_change_proposal",
+          "repo_change_proposal_snapshot",
+          "repo_read_change_proposal_discussion",
+          "repo_read_change_proposal_checks",
+          "repo_merge_change_proposal"
+        ] do
+      refute prompt =~ forbidden_tool
+    end
+
+    assert prompt =~ "publishedHeadSha"
+    assert prompt =~ "suggested_mr_title"
+    assert prompt =~ "do not create or update an MR"
+    refute prompt =~ "Create or update the GitHub PR"
+    refute prompt =~ "Create or update the GitLab MR"
   end
 
   test "only TAPD CNB templates opt into Coding PR Delivery reconciliation" do
@@ -1228,7 +1294,11 @@ defmodule SymphonyElixir.WorkflowTemplatesTest do
   defp workflow_template_readme_aliases do
     readme = Templates.root() |> Path.join("README.md") |> File.read!()
 
-    case Regex.run(~r/Current aliases:\n\n```text\n(?<aliases>.*?)\n```/s, readme, capture: ["aliases"]) do
+    case Regex.run(
+           ~r/Current aliases:\r?\n\r?\n```text\r?\n(?<aliases>.*?)\r?\n```/s,
+           readme,
+           capture: ["aliases"]
+         ) do
       [aliases] ->
         aliases
         |> String.split("\n", trim: true)

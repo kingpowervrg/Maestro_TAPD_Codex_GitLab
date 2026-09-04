@@ -87,6 +87,7 @@ where the task comes from / where the Git repository or code platform is / which
 | `linear/github/codex` | Linear + GitHub + Codex | Codex on Linear/GitHub tasks |
 | `linear/github/claude_code` | Linear + GitHub + Claude Code | Claude Code on Linear/GitHub tasks |
 | `tapd/github/codex` | TAPD + GitHub + Codex | TAPD task + GitHub repository |
+| `tapd/git/codex` | TAPD + Git remote + Codex | Git-only branch delivery with human review |
 | `tapd/cnb/opencode` | TAPD + CNB + OpenCode | TAPD/CNB flow |
 | `tapd/cnb/claude_code` | TAPD + CNB + Claude Code | TAPD/CNB flow |
 
@@ -119,6 +120,10 @@ export SOURCE_REPO_BASE_BRANCH=main
 export SOURCE_REPO_PROVIDER_REPOSITORY=example-user/sample-repo
 ```
 
+For `tapd/git/codex`, use an SSH clone URL and omit the provider repository and
+API credentials. The runtime pushes only the work branch, records its commit
+SHA and validation result in TAPD, moves the Story to human review, and stops.
+
 Before connecting real systems, set an explicit isolated workspace root:
 
 ```bash
@@ -133,6 +138,19 @@ Example: TAPD + GitHub + Codex:
 ./bin/symphony \
   --i-understand-that-this-will-be-running-without-the-usual-guardrails \
   --template tapd/github/codex \
+  --port 4000
+```
+
+Example: TAPD + a Git-only SSH remote + Codex:
+
+```bash
+export SOURCE_REPO_URL=git@gitlab.example.com:group/project.git
+export SOURCE_REPO_BASE_BRANCH=main
+export SOURCE_REPO_BRANCH_WORK_PREFIX=maestro/
+
+./bin/symphony \
+  --i-understand-that-this-will-be-running-without-the-usual-guardrails \
+  --template tapd/git/codex \
   --port 4000
 ```
 

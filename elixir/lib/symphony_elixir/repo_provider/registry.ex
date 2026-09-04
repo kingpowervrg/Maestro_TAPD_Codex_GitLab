@@ -34,11 +34,13 @@ defmodule SymphonyElixir.RepoProvider.Registry do
   alias SymphonyElixir.RepoProvider.Kinds
 
   @cnb_kind Kinds.cnb()
+  @git_kind Kinds.git()
   @github_kind Kinds.github()
   @memory_kind Kinds.memory()
 
   @default_adapters %{
     @cnb_kind => SymphonyElixir.RepoProvider.CNB.Adapter,
+    @git_kind => SymphonyElixir.RepoProvider.Git.Adapter,
     @github_kind => SymphonyElixir.RepoProvider.GitHub.Adapter,
     @memory_kind => SymphonyElixir.RepoProvider.Memory
   }

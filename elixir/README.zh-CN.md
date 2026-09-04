@@ -87,6 +87,7 @@ Workflow template 可以理解成“运行配方”。它决定：
 | `linear/github/codex` | Linear + GitHub + Codex | 用 Codex 处理 Linear/GitHub 任务 |
 | `linear/github/claude_code` | Linear + GitHub + Claude Code | 用 Claude Code 处理 Linear/GitHub 任务 |
 | `tapd/github/codex` | TAPD + GitHub + Codex | TAPD 任务 + GitHub 仓库 |
+| `tapd/git/codex` | TAPD + Git 远端 + Codex | 仅推送工作分支，之后人工评审 |
 | `tapd/cnb/opencode` | TAPD + CNB + OpenCode | TAPD/CNB 流程 |
 | `tapd/cnb/claude_code` | TAPD + CNB + Claude Code | TAPD/CNB 流程 |
 
@@ -119,6 +120,10 @@ export SOURCE_REPO_BASE_BRANCH=main
 export SOURCE_REPO_PROVIDER_REPOSITORY=example-user/sample-repo
 ```
 
+使用 `tapd/git/codex` 时，应配置 SSH clone URL，并省略 provider repository
+和 API 凭据。运行时只推送工作分支，在 TAPD 记录 commit SHA 与验证结果，转入
+人工评审后停止。
+
 接入真实系统前，建议显式设置独立工作区目录：
 
 ```bash
@@ -133,6 +138,19 @@ export SYMPHONY_WORKSPACE_ROOT=/path/to/isolated/maestro-workspaces
 ./bin/symphony \
   --i-understand-that-this-will-be-running-without-the-usual-guardrails \
   --template tapd/github/codex \
+  --port 4000
+```
+
+例如 TAPD + Git-only SSH 远端 + Codex：
+
+```bash
+export SOURCE_REPO_URL=git@gitlab.example.com:group/project.git
+export SOURCE_REPO_BASE_BRANCH=main
+export SOURCE_REPO_BRANCH_WORK_PREFIX=maestro/
+
+./bin/symphony \
+  --i-understand-that-this-will-be-running-without-the-usual-guardrails \
+  --template tapd/git/codex \
   --port 4000
 ```
 

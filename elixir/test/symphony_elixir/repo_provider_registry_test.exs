@@ -73,7 +73,7 @@ defmodule SymphonyElixir.RepoProviderRegistryTest do
       repo_provider_web_base_url: "https://fake.example.test"
     )
 
-    assert RepoProvider.supported_kinds() |> Enum.sort() == ["cnb", "fake", "github", "memory"]
+    assert RepoProvider.supported_kinds() |> Enum.sort() == ["cnb", "fake", "git", "github", "memory"]
     assert RepoProvider.adapter() == FakeAdapter
     assert RepoProvider.adapter_for("fake") == FakeAdapter
     assert RepoProvider.current_kind() == "fake"

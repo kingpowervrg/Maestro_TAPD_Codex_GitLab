@@ -241,6 +241,7 @@ defmodule SymphonyElixir.RepoDynamicToolTest do
 
     run!("git", ["init", "--bare", remote_path])
     run!("git", ["clone", remote_path, repo_path])
+    run!("git", ["-C", repo_path, "config", "core.autocrlf", "false"])
     run!("git", ["-C", repo_path, "config", "user.email", "repo-tool@example.invalid"])
     run!("git", ["-C", repo_path, "config", "user.name", "Repo Tool Test"])
 

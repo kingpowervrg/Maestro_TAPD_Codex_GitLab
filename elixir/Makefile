@@ -36,7 +36,7 @@ dialyzer:
 	$(MIX) dialyzer --format short
 
 secret-scan:
-	../scripts/secret-scan.sh
+	bash ../scripts/secret-scan.sh
 
 repo-provider-smoke: build
 	./bin/symphony repo-provider smoke $(REPO_PROVIDER_SMOKE_ARGS)

@@ -9,6 +9,7 @@ defmodule SymphonyElixir.RepoProvider.Kinds do
 
   @github "github"
   @cnb "cnb"
+  @git "git"
   @memory "memory"
 
   @spec github() :: String.t()
@@ -17,14 +18,18 @@ defmodule SymphonyElixir.RepoProvider.Kinds do
   @spec cnb() :: String.t()
   def cnb, do: @cnb
 
+  @spec git() :: String.t()
+  def git, do: @git
+
   @spec memory() :: String.t()
   def memory, do: @memory
 
   @spec built_in() :: [String.t()]
-  def built_in, do: [github(), cnb(), memory()]
+  def built_in, do: [github(), cnb(), git(), memory()]
 
   @spec label(term()) :: String.t()
   def label(@github), do: "GitHub"
   def label(@cnb), do: "CNB"
+  def label(@git), do: "Git"
   def label(_kind), do: "repo-provider"
 end

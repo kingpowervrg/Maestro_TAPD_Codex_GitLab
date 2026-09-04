@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BASELINE="${ROOT}/.secrets.baseline"
 REPORT_DIR="${SECRET_SCAN_REPORT_DIR:-$(mktemp -d "${TMPDIR:-/tmp}/symphony-secret-scan.XXXXXX")}"
-DETECT_SECRETS_EXCLUDE='(^|/)(\.git|\.secrets\.baseline|elixir/deps|elixir/_build|elixir/cover|elixir/log|elixir/logs|elixir/tmp|elixir/doc|elixir/priv/static/assets)(/|$)'
+DETECT_SECRETS_EXCLUDE='(^|[\\/])(\.git|\.secrets\.baseline|elixir[\\/]deps|elixir[\\/]_build|elixir[\\/]cover|elixir[\\/]log|elixir[\\/]logs|elixir[\\/]tmp|elixir[\\/]doc|elixir[\\/]priv[\\/]static[\\/]assets)([\\/]|$)'
 
 require_command() {
   local name="$1"
@@ -23,6 +23,28 @@ EOF
 require_command gitleaks
 require_command trufflehog
 require_command detect-secrets
+
+resolve_python() {
+  local candidate
+  local probe
+
+  for candidate in python3 python; do
+    if ! command -v "$candidate" >/dev/null 2>&1; then
+      continue
+    fi
+
+    probe="$($candidate -c 'print("symphony-python-ok")' 2>/dev/null || true)"
+    if [ "$probe" = "symphony-python-ok" ]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  echo "Missing a working Python interpreter (tried python3, then python)." >&2
+  return 127
+}
+
+PYTHON_BIN="$(resolve_python)"
 
 if [ ! -f "$BASELINE" ]; then
   echo "Missing detect-secrets baseline: ${BASELINE}" >&2
@@ -45,12 +67,22 @@ gitleaks detect \
   --report-path "${REPORT_DIR}/gitleaks.json"
 
 echo "==> trufflehog verified secrets"
-trufflehog git "file://${ROOT}" \
-  --results=verified \
-  --json \
-  --no-update \
-  --fail \
-  >"${REPORT_DIR}/trufflehog.jsonl"
+TRUFFLEHOG_REPO_URI="file://${ROOT}"
+
+if command -v cygpath >/dev/null 2>&1; then
+  TRUFFLEHOG_REPO_URI="file://$(cygpath -m "$ROOT")"
+fi
+
+(
+  export MSYS_NO_PATHCONV=1
+  export MSYS2_ARG_CONV_EXCL='*'
+
+  trufflehog git "$TRUFFLEHOG_REPO_URI" \
+    --results=verified \
+    --json \
+    --no-update \
+    --fail
+) >"${REPORT_DIR}/trufflehog.jsonl"
 
 echo "==> detect-secrets baseline gate"
 DETECT_SECRETS_CURRENT="${REPORT_DIR}/detect-secrets-current.json"
@@ -58,7 +90,7 @@ DETECT_SECRETS_CURRENT="${REPORT_DIR}/detect-secrets-current.json"
 (cd "$ROOT" && detect-secrets scan --exclude-files "$DETECT_SECRETS_EXCLUDE") \
   >"$DETECT_SECRETS_CURRENT"
 
-python3 - "$BASELINE" "$DETECT_SECRETS_CURRENT" <<'PY'
+"$PYTHON_BIN" - "$BASELINE" "$DETECT_SECRETS_CURRENT" <<'PY'
 import json
 import sys
 
@@ -69,10 +101,11 @@ def load_findings(path):
 
     findings = set()
     for filename, entries in data.get("results", {}).items():
+        normalized_filename = filename.replace("\\", "/")
         for entry in entries:
             findings.add(
                 (
-                    filename,
+                    normalized_filename,
                     entry.get("type"),
                     entry.get("hashed_secret"),
                 )
