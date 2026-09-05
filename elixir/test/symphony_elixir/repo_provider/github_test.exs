@@ -72,11 +72,11 @@ defmodule SymphonyElixir.RepoProvider.GitHubTest do
     end)
 
     assert :ok ==
-             GitHub.close_open_pull_requests_for_branch(%{}, "feature/no-gh", find_executable: fn "gh" -> nil end)
+             GitHub.close_open_pull_requests_for_branch(%{}, "feature/no-gh", executable_finder: fn "gh" -> nil end)
 
     assert :ok ==
              GitHub.close_open_pull_requests_for_branch(%{}, "feature/no-auth",
-               find_executable: fn "gh" -> "/usr/bin/gh" end,
+               executable_finder: fn "gh" -> "/usr/bin/gh" end,
                command_runner: fn
                  "gh", ["auth", "status"] -> {:error, {1, "denied"}}
                end
@@ -100,7 +100,7 @@ defmodule SymphonyElixir.RepoProvider.GitHubTest do
     assert :ok ==
              GitHub.close_open_pull_requests_for_branch(%{}, "feature/list-fails",
                repo: "acme/widgets",
-               find_executable: fn "gh" -> "/usr/bin/gh" end,
+               executable_finder: fn "gh" -> "/usr/bin/gh" end,
                command_runner: fn
                  "gh", ["auth", "status"] -> {:ok, ""}
                  "gh", ["pr", "list" | _rest] -> {:error, {1, "boom"}}
@@ -113,7 +113,7 @@ defmodule SymphonyElixir.RepoProvider.GitHubTest do
              GitHub.close_open_pull_requests_for_branch(
                %{provider: %{repository: "acme/widgets"}},
                "feature/workpad",
-               find_executable: fn "gh" -> "/usr/bin/gh" end,
+               executable_finder: fn "gh" -> "/usr/bin/gh" end,
                command_runner: fn
                  "gh", ["auth", "status"] ->
                    {:ok, ""}

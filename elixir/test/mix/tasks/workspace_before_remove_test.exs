@@ -387,7 +387,7 @@ defmodule Mix.Tasks.Workspace.BeforeRemoveTest do
         end)
 
       assert error_output =~ "Unsupported repo provider kind: \"gitlab\""
-      assert error_output =~ ~s(Supported: ["cnb", "github", "memory"])
+      assert error_output =~ ~s(Supported: ["cnb", "git", "github", "memory"])
       assert File.read!(log_path) == ""
     end)
   end

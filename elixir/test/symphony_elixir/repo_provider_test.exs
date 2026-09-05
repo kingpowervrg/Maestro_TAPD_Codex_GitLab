@@ -252,7 +252,7 @@ defmodule SymphonyElixir.RepoProviderTest do
              RepoProvider.close_open_pull_requests_for_branch(
                %{provider: %{kind: "github", repository: "acme/widgets"}},
                "feature/github-provider",
-               find_executable: fn "gh" -> nil end
+               executable_finder: fn "gh" -> nil end
              )
   end
 end
