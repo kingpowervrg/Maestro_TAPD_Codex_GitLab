@@ -1,8 +1,9 @@
 # GitLab Git-only 基础操作落地计划
 
-状态：Draft  
+状态：In Progress（代码与 Git SSH 写入验证已完成，TAPD 联调待配置）
 版本：Lite（仅 Git 基础操作）  
 创建日期：2026-09-02  
+最后验证：2026-09-08
 适用范围：Maestro Elixir Runtime  
 目标实例：`gitlab-ee.funplus.io`  
 目标仓库：`koa-client-code/koa-client-code`
@@ -150,7 +151,7 @@ $env:TAPD_API_PASSWORD="<TAPD API 密码>"
 $env:TAPD_WORKSPACE_ID="<TAPD 项目 ID>"
 
 $env:SOURCE_REPO_URL="git@gitlab-ee.funplus.io:koa-client-code/koa-client-code.git"
-$env:SOURCE_REPO_BASE_BRANCH="main" # 联调前确认真实默认分支
+$env:SOURCE_REPO_BASE_BRANCH="master" # 2026-09-08 通过 ls-remote --symref 确认
 $env:SOURCE_REPO_BRANCH_WORK_PREFIX="maestro/"
 ```
 
@@ -171,55 +172,57 @@ SYMPHONY_REPO_PROVIDER_WEB_BASE_URL
 
 工作项：
 
-- [ ] Maestro 运行环境安装可用的 `git` 和 `ssh`。
+- [x] Maestro 运行环境安装可用的 `git` 和 `ssh`。
 - [ ] 为 Maestro 运行账号配置专用 SSH Key。
-- [ ] 将公钥添加到 GitLab 用户或项目 Deploy Key，并授予目标仓库写权限。
-- [ ] 将 `gitlab-ee.funplus.io` 的 SSH Host Key 加入可信 `known_hosts`。
+- [x] 当前 SSH 公钥已具备目标仓库读取和工作分支写入权限。
+- [x] 将 `gitlab-ee.funplus.io` 的 SSH Host Key 加入可信 `known_hosts`。
 - [ ] 如果私钥有口令，确保非交互 Maestro 进程能访问已解锁的 `ssh-agent`。
-- [ ] 配置提交者 `user.name` 和 `user.email`。
-- [ ] 确认网络、DNS、VPN、防火墙和 SSH 端口可用。
+- [x] 配置提交者 `user.name` 和 `user.email`。
+- [x] 确认网络、DNS、VPN、防火墙和 SSH 端口可用。
 
 验收标准：
 
-- [ ] `ssh -T git@gitlab-ee.funplus.io` 能完成认证，不出现交互式 Host Key 或密码提示。
-- [ ] `git ls-remote git@gitlab-ee.funplus.io:koa-client-code/koa-client-code.git` 成功。
+- [x] `ssh -T git@gitlab-ee.funplus.io` 能完成认证，不出现交互式 Host Key 或密码提示。
+- [x] `git ls-remote git@gitlab-ee.funplus.io:koa-client-code/koa-client-code.git` 成功。
 - [ ] 在测试分支执行一次 clone、commit、push 和远端 SHA 校验成功。
 - [ ] Maestro 对默认分支没有直接 push 要求，工作分支前缀符合项目策略。
+
+验证记录：基于 `master` 的 filtered fetch、空 commit、工作分支 push 和远端 SHA 校验已成功；常规 shallow clone 在等待超过 3 分钟后人工中止，因此 clone 验收仍未勾选。
 
 #### P0-2：零能力 `git` Provider
 
 工作项：
 
-- [ ] 在 Repo Provider kinds 中增加 `git` 和显示名称 `Git`。
-- [ ] 新增 `SymphonyElixir.RepoProvider.Git.Adapter`。
-- [ ] Adapter 实现 `kind/0`、`defaults/0`、`validate_config/1` 和 `capabilities/0`。
-- [ ] `capabilities/0` 返回空列表，且不声明任何 MR、review、checks 或 merge 回调。
-- [ ] 在默认 Registry 中注册 `git` Adapter。
+- [x] 在 Repo Provider kinds 中增加 `git` 和显示名称 `Git`。
+- [x] 新增 `SymphonyElixir.RepoProvider.Git.Adapter`。
+- [x] Adapter 实现 `kind/0`、`defaults/0`、`validate_config/1` 和 `capabilities/0`。
+- [x] `capabilities/0` 返回空列表，且不声明任何 MR、review、checks 或 merge 回调。
+- [x] 在默认 Registry 中注册 `git` Adapter。
 
 验收标准：
 
-- [ ] `repo.provider.kind: git` 能通过配置校验。
-- [ ] 选择 `git` Provider 时不会生成 Repo Provider change-proposal typed tools。
-- [ ] 启动和运行过程中不会检查 `gh`、`glab` 或 GitLab API Token。
+- [x] `repo.provider.kind: git` 能通过配置校验。
+- [x] 选择 `git` Provider 时不会生成 Repo Provider change-proposal typed tools。
+- [x] 启动和运行过程中不会检查 `gh`、`glab` 或 GitLab API Token。
 
 #### P0-3：`tapd/git/codex` 模板
 
 工作项：
 
-- [ ] 基于 `tapd/github/codex` 新增 Git-only 模板。
-- [ ] 设置 `change_proposal: false` 和 `typed_repo_tools: false`。
-- [ ] 设置 `repo.provider.kind: git`。
-- [ ] 从 `active_states` 删除 `merging` 和其他不应自动运行的人工状态。
-- [ ] 删除 GitHub Provider Notes 和 GitHub 专属前置条件。
-- [ ] 不包含 MR 创建、评论、checks、land 或 merge 指令。
-- [ ] 在 Template Catalog 和模板 README 中注册 `tapd/git/codex`。
+- [x] 基于 `tapd/github/codex` 新增 Git-only 模板。
+- [x] 设置 `change_proposal: false` 和 `typed_repo_tools: false`。
+- [x] 设置 `repo.provider.kind: git`。
+- [x] 从 `active_states` 删除 `merging` 和其他不应自动运行的人工状态。
+- [x] 删除 GitHub Provider Notes 和 GitHub 专属前置条件。
+- [x] 不包含 MR 创建、评论、checks、land 或 merge 指令。
+- [x] 在 Template Catalog 和模板 README 中注册 `tapd/git/codex`。
 
 验收标准：
 
-- [ ] `--template tapd/git/codex` 可以被发现、渲染和加载。
-- [ ] 生成的 tool inventory 包含 `repo_checkout`、`repo_diff`、`repo_commit`、`repo_push`。
-- [ ] 生成的 tool inventory 不包含 change-proposal、review、checks 和 merge 工具。
-- [ ] 渲染后的提示词不包含要求创建 GitHub PR 或 GitLab MR 的指令。
+- [x] `--template tapd/git/codex` 可以被发现、渲染和加载。
+- [x] 生成的 tool inventory 包含 `repo_checkout`、`repo_diff`、`repo_commit`、`repo_push`。
+- [x] 生成的 tool inventory 不包含 change-proposal、review、checks 和 merge 工具。
+- [x] 渲染后的提示词不包含要求创建 GitHub PR 或 GitLab MR 的指令。
 
 #### P0-4：Git-only 执行生命周期
 
@@ -237,37 +240,39 @@ Agent 主流程必须是：
 
 工作项：
 
-- [ ] 新增 Git-only lifecycle partial，或在模板中提供等价的独立执行说明。
-- [ ] 明确禁止调用 Repo Provider change-proposal 工具。
-- [ ] 明确禁止调用会创建 PR 的现有 `push` skill。
-- [ ] 优先使用 `repo_push` typed tool；仅在 inventory 不可用时使用 `bin/repo push`。
-- [ ] push 被拒绝时区分非 fast-forward、权限、认证和保护分支错误。
-- [ ] 非 fast-forward 时允许按现有 Repo Core 流程同步并重新验证；认证和权限错误必须停止并报告。
+- [x] 新增 Git-only lifecycle partial，或在模板中提供等价的独立执行说明。
+- [x] 明确禁止调用 Repo Provider change-proposal 工具。
+- [x] 明确禁止调用会创建 PR 的现有 `push` skill。
+- [x] 优先使用 `repo_push` typed tool；仅在 inventory 不可用时使用 `bin/repo push`。
+- [x] push 被拒绝时区分非 fast-forward、权限、认证和保护分支错误。
+- [x] 非 fast-forward 时允许按现有 Repo Core 流程同步并重新验证；认证和权限错误必须停止并报告。
 
 验收标准：
 
 - [ ] 成功路径在 push 和 TAPD 人工交接后停止。
-- [ ] 失败路径不会为了绕过权限而重写 remote、切换协议或使用强制 push。
-- [ ] 默认禁止 `--force`；只有明确发生历史重写时才能使用 `--force-with-lease`。
-- [ ] 不会直接提交或推送到 `main` 等默认分支。
+- [x] 失败路径不会为了绕过权限而重写 remote、切换协议或使用强制 push。
+- [x] 默认禁止 `--force`；只有明确发生历史重写时才能使用 `--force-with-lease`。
+- [x] 不会直接提交或推送到 `main` 等默认分支。
 
 #### P0-5：测试与文档
 
 工作项：
 
-- [ ] 增加 `git` Adapter contract/registry/config 测试。
-- [ ] 增加模板发现、渲染和 profile requirements 测试。
-- [ ] 增加 dynamic tool inventory 正向和负向断言。
-- [ ] 增加 Git-only 提示词中不存在 PR/MR/merge 指令的测试。
-- [ ] 使用本地 bare Git 仓库测试 clone、branch、commit、push 和 published SHA，不依赖 GitLab API。
-- [ ] 更新模板 README、Repo Provider 文档和测试文档。
+- [x] 增加 `git` Adapter contract/registry/config 测试。
+- [x] 增加模板发现、渲染和 profile requirements 测试。
+- [x] 增加 dynamic tool inventory 正向和负向断言。
+- [x] 增加 Git-only 提示词中不存在 PR/MR/merge 指令的测试。
+- [x] 使用本地 bare Git 仓库测试 clone、branch、commit、push 和 published SHA，不依赖 GitLab API。
+- [x] 更新模板 README、Repo Provider 文档和测试文档。
 
 验收标准：
 
-- [ ] 相关定向测试通过。
+- [x] 相关定向测试通过。
 - [ ] `make all` 通过。
-- [ ] `make secret-scan` 通过。
-- [ ] 未经显式授权，不向真实业务仓库执行写入 smoke。
+- [x] `make secret-scan` 通过。
+- [x] 只在获得显式授权后向真实业务仓库的独立工作分支执行写入 smoke。
+
+`make all` 记录：所有子门禁均曾独立通过，但两次完整命令分别被 EventStore 队列压力断言和 reconciliation 异步事件顺序断言的非确定失败阻断，因此保持未勾选。
 
 ### 6.2 Nice-to-Have（P1）
 
@@ -316,12 +321,12 @@ Agent 主流程必须是：
 
 ## 9. Admin and External Dependencies
 
-- [ ] 确认 `koa-client-code/koa-client-code` 的真实默认分支。
+- [x] 确认 `koa-client-code/koa-client-code` 的真实默认分支为 `master`。
 - [ ] 确认允许的自动化分支前缀，例如 `maestro/`。
-- [ ] 为 Maestro 运行账号提供目标仓库读取和工作分支写入权限。
-- [ ] 配置专用 SSH Key 和可信 Host Key。
-- [ ] 确认 Maestro 运行环境能访问 GitLab SSH 服务。
-- [ ] 提供用于首次写入验收的测试仓库或测试分支。
+- [x] 为 Maestro 运行账号提供目标仓库读取和工作分支写入权限。
+- [x] 当前 SSH 身份可非交互认证，且 Host Key 已可信；是否为专用 Key 仍待管理员确认。
+- [x] 确认 Maestro 运行环境能访问 GitLab SSH 服务。
+- [x] 已在独立工作分支 `maestro/git-smoke-20260908-1507` 完成首次写入验收。
 - [ ] 确认 TAPD 中“人工评审”和“完成”对应的原始状态值。
 - [ ] 确认人工评审反馈回到 TAPD 后使用哪个状态重新触发开发；默认建议直接回到 `developing`。
 
@@ -331,11 +336,11 @@ Agent 主流程必须是：
 
 ### Blocking
 
-1. **[项目管理员]** 默认分支是 `main`、`master` 还是其他名称？
+1. **[已解决]** 默认分支为 `master`（2026-09-08 通过 Git SSH `ls-remote --symref` 确认）。
 2. **[项目管理员]** 允许 Maestro 创建哪些前缀的工作分支？
 3. **[基础设施/GitLab 管理员]** Maestro 运行账号使用用户 SSH Key 还是可写 Deploy Key？
 4. **[TAPD 管理员]** 人工评审状态和返工回开发状态的准确 raw status 是什么？
-5. **[项目管理员]** 哪个仓库或分支用于首次真实 push 验收？
+5. **[已解决]** 首次真实 push 验收使用 `koa-client-code/koa-client-code` 的 `maestro/git-smoke-20260908-1507` 分支。
 
 ### Non-Blocking
 
