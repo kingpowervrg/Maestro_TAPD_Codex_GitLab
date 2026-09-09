@@ -812,7 +812,18 @@ defmodule SymphonyElixir.WorkflowTemplatesTest do
 
     assert settings.repo.provider.kind == RepoProviderKinds.git()
     assert settings.tracker.lifecycle["active_states"] == ["status_4", "developing"]
+
+    assert get_in(config, ["tracker", "lifecycle", "policy_by_route_key"]) == %{
+             "merging" => %{"action" => "wait"},
+             "rework" => %{"action" => "wait"}
+           }
+
     assert :ok == SymphonyElixir.RepoProvider.validate_config(settings.repo)
+
+    after_create = get_in(config, ["hooks", "after_create"])
+    assert after_create =~ "GIT_LFS_SKIP_SMUDGE=1"
+    assert after_create =~ "--depth 1 --filter blob:none --sparse"
+    assert after_create =~ "--branch \"$SOURCE_REPO_BASE_BRANCH\""
 
     tool_context =
       SymphonyElixir.Agent.DynamicTool.capture_context(
@@ -842,6 +853,7 @@ defmodule SymphonyElixir.WorkflowTemplatesTest do
     end
 
     assert prompt =~ "publishedHeadSha"
+    assert prompt =~ "git sparse-checkout add <path>"
     assert prompt =~ "suggested_mr_title"
     assert prompt =~ "do not create or update an MR"
     refute prompt =~ "Create or update the GitHub PR"

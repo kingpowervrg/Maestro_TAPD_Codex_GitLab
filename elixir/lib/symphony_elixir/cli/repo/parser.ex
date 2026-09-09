@@ -9,6 +9,8 @@ defmodule SymphonyElixir.CLI.Repo.Parser do
     base: :string,
     work_prefix: :string,
     depth: :integer,
+    filter: :string,
+    sparse: :boolean,
     message: :string,
     ff_only: :boolean,
     merge: :boolean,
@@ -75,7 +77,7 @@ defmodule SymphonyElixir.CLI.Repo.Parser do
       preflight [--remote-url <url>]
       diff [--merge] [--cached|--staged] [<ref-or-path> ...]
       diff-check [<ref-or-path> ...]
-      clone <remote-url> <target-path> [--branch <branch>] [--depth <n>]
+      clone <remote-url> <target-path> [--branch <branch>] [--depth <n>] [--filter <spec>] [--sparse]
       fetch
       merge <ref> [--ff-only]
       sync-base [--base <branch>] [--ff-only]

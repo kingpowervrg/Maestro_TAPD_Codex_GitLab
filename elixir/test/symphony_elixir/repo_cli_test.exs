@@ -270,12 +270,24 @@ defmodule SymphonyElixir.RepoCLITest do
              RepoCLI.evaluate(["diff-check", "origin/main...HEAD", "--path", repo_root], deps)
   end
 
-  test "clone renders write command result and accepts branch and depth" do
+  test "clone renders write command result and accepts branch, depth, filter, and sparse checkout" do
     parent_dir = tmp_dir!("clone-parent")
     target_path = Path.join(parent_dir, "repo")
 
     runner = fn
-      "git", ["clone", "--depth", "1", "--branch", "main", "https://example.test/acme/widgets.git", ^target_path] ->
+      "git",
+      [
+        "clone",
+        "--depth",
+        "1",
+        "--filter",
+        "blob:none",
+        "--sparse",
+        "--branch",
+        "main",
+        "https://example.test/acme/widgets.git",
+        ^target_path
+      ] ->
         {:ok, "cloned\n"}
 
       command, args ->
@@ -284,7 +296,18 @@ defmodule SymphonyElixir.RepoCLITest do
 
     assert {"cloned\n", "", 0} =
              RepoCLI.evaluate(
-               ["clone", "https://example.test/acme/widgets.git", target_path, "--branch", "main", "--depth", "1"],
+               [
+                 "clone",
+                 "https://example.test/acme/widgets.git",
+                 target_path,
+                 "--branch",
+                 "main",
+                 "--depth",
+                 "1",
+                 "--filter",
+                 "blob:none",
+                 "--sparse"
+               ],
                cli_deps(runner)
              )
   end

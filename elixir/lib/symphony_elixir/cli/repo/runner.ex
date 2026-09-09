@@ -94,6 +94,8 @@ defmodule SymphonyElixir.CLI.Repo.Runner do
     repo_command_opts =
       command_opts
       |> maybe_put(:depth, Keyword.get(cli_opts, :depth))
+      |> maybe_put(:filter, present_string(Keyword.get(cli_opts, :filter)))
+      |> maybe_put(:sparse, Keyword.get(cli_opts, :sparse))
       |> maybe_put(:branch, present_string(Keyword.get(cli_opts, :branch)))
 
     Repo.clone(remote_url, target_path, repo_command_opts)

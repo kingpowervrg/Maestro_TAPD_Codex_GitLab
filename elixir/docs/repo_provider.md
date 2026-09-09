@@ -100,6 +100,14 @@ token. The SSH identity must have read access plus write access to the allowed
 work-branch prefix, while the default branch should remain protected from
 direct pushes.
 
+The template bootstraps large repositories with a depth-one, blobless sparse
+clone and disables automatic Git LFS smudging. This keeps the initial workspace
+bounded even when the remote repository is very large. Before editing, expand
+the sparse checkout only for Story-required directories with
+`git sparse-checkout add <path>` and fetch Git LFS objects only when the scoped
+work explicitly needs them. The repo helper exposes the corresponding clone
+options as `--filter <spec>` and `--sparse`.
+
 Before production use, validate `ssh -T`, `git ls-remote`, host-key trust, DNS
 and network access, commit author configuration, and a clone/commit/push/SHA
 round trip against a disposable repository or branch. This is a Git smoke,

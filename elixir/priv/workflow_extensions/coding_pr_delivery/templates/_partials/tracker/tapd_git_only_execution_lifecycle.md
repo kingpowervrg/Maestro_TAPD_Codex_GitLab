@@ -14,9 +14,12 @@ are human-owned or stopped states and are deliberately absent from
    `create_or_switch` to create a Story-specific branch. Confirm the branch is
    not `{{ repo.base_branch }}`
    and follows the configured work prefix before any commit or push.
-4. Work only under `repo/`, implement the scoped change, and run every
-   repository and Story-required validation step. Record commands and outcomes
-   in the workpad.
+4. The initial clone is blobless and sparse. Before editing, inspect the tree
+   and expand sparse checkout only for directories required by the Story with
+   `git sparse-checkout add <path>`. Fetch Git LFS objects only for explicitly
+   required paths. Then work only under `repo/`, implement the scoped change,
+   and run every repository and Story-required validation step. Record commands
+   and outcomes in the workpad.
 5. Use `repo_diff` with its whitespace check enabled and verify that only the
    intended changes are present.
 6. Use `repo_commit` with canonical mode `all` or `staged`. Never commit

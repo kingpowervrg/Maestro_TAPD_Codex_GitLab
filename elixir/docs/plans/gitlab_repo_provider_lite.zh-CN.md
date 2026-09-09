@@ -1,9 +1,9 @@
 # GitLab Git-only 基础操作落地计划
 
-状态：In Progress（代码与 Git SSH 写入验证已完成，TAPD 联调待配置）
+状态：In Progress（代码、Git SSH 写入验证和质量门禁已完成；TAPD 凭证健康检查及端到端灰度待完成）
 版本：Lite（仅 Git 基础操作）  
 创建日期：2026-09-02  
-最后验证：2026-09-08
+最后验证：2026-09-09
 适用范围：Maestro Elixir Runtime  
 目标实例：`gitlab-ee.funplus.io`  
 目标仓库：`koa-client-code/koa-client-code`
@@ -173,10 +173,10 @@ SYMPHONY_REPO_PROVIDER_WEB_BASE_URL
 工作项：
 
 - [x] Maestro 运行环境安装可用的 `git` 和 `ssh`。
-- [ ] 为 Maestro 运行账号配置专用 SSH Key。
+- [x] 为 Maestro 运行账号配置专用 SSH Key。
 - [x] 当前 SSH 公钥已具备目标仓库读取和工作分支写入权限。
 - [x] 将 `gitlab-ee.funplus.io` 的 SSH Host Key 加入可信 `known_hosts`。
-- [ ] 如果私钥有口令，确保非交互 Maestro 进程能访问已解锁的 `ssh-agent`。
+- [x] SSH 凭证可供非交互 Maestro 进程使用；无需运行时输入私钥口令。
 - [x] 配置提交者 `user.name` 和 `user.email`。
 - [x] 确认网络、DNS、VPN、防火墙和 SSH 端口可用。
 
@@ -184,10 +184,10 @@ SYMPHONY_REPO_PROVIDER_WEB_BASE_URL
 
 - [x] `ssh -T git@gitlab-ee.funplus.io` 能完成认证，不出现交互式 Host Key 或密码提示。
 - [x] `git ls-remote git@gitlab-ee.funplus.io:koa-client-code/koa-client-code.git` 成功。
-- [ ] 在测试分支执行一次 clone、commit、push 和远端 SHA 校验成功。
-- [ ] Maestro 对默认分支没有直接 push 要求，工作分支前缀符合项目策略。
+- [x] 在测试分支执行一次 clone、commit、push 和远端 SHA 校验成功。
+- [x] Maestro 对默认分支没有直接 push 要求，`maestro/` 工作分支前缀符合项目策略。
 
-验证记录：基于 `master` 的 filtered fetch、空 commit、工作分支 push 和远端 SHA 校验已成功；常规 shallow clone 在等待超过 3 分钟后人工中止，因此 clone 验收仍未勾选。
+验证记录：常规 shallow clone 在等待超过 3 分钟后人工中止；目标仓库约 146 GB，改用 Repo Core 的 blobless sparse clone（`--depth 1 --filter blob:none --sparse`，并设置 `GIT_LFS_SKIP_SMUDGE=1`）后约 13 秒完成，占用约 119 MB，检出 `master` 且 `remote.origin.promisor=true`。该 clone 验证与此前基于 `master` 的空 commit、`maestro/git-smoke-20260908-1507` 分支 push 和远端 SHA 一致性验证共同完成此项验收。
 
 #### P0-2：零能力 `git` Provider
 
@@ -216,6 +216,8 @@ SYMPHONY_REPO_PROVIDER_WEB_BASE_URL
 - [x] 删除 GitHub Provider Notes 和 GitHub 专属前置条件。
 - [x] 不包含 MR 创建、评论、checks、land 或 merge 指令。
 - [x] 在 Template Catalog 和模板 README 中注册 `tapd/git/codex`。
+- [x] 大仓库初始化默认使用 blobless sparse clone，并支持按需扩展 sparse checkout 和显式获取所需 LFS 路径。
+- [x] 将 `merging` 和 `rework` 路由策略设为人工等待，避免未激活状态被默认自动派发策略拒绝。
 
 验收标准：
 
@@ -268,11 +270,13 @@ Agent 主流程必须是：
 验收标准：
 
 - [x] 相关定向测试通过。
-- [ ] `make all` 通过。
+- [x] `make all` 通过。
 - [x] `make secret-scan` 通过。
 - [x] 只在获得显式授权后向真实业务仓库的独立工作分支执行写入 smoke。
 
-`make all` 记录：所有子门禁均曾独立通过，但两次完整命令分别被 EventStore 队列压力断言和 reconciliation 异步事件顺序断言的非确定失败阻断，因此保持未勾选。
+`make all` 记录：2026-09-09 最终完整命令通过；全量测试为 2493 tests、0 failures、19 skipped，覆盖率 72.98%，Dialyzer `Total errors: 0`。此前 EventStore 队列压力、reconciliation 异步事件顺序及 prompt builder 全局状态测试曾非确定失败；对应测试在原始 Maestro 或隔离重复运行中也可复现/通过，最终完整门禁已通过。
+
+TAPD 只读 smoke 记录：模板配置校验通过；2026-09-09 使用更新后的 `.env.gitlab.local` 凭证重跑 `GET /quickstart/testauth`，返回 HTTP 200，TAPD API 认证通过。未执行任何工作项写操作。
 
 ### 6.2 Nice-to-Have（P1）
 
@@ -294,7 +298,7 @@ Agent 主流程必须是：
 1. TAPD 测试工作项进入规划状态。
 2. Maestro 使用 `tapd/git/codex` 创建隔离 workspace。
 3. `after_create` 通过 SSH 将目标仓库克隆到 `repo/`。
-4. Maestro 同步 `origin/main` 并创建带 `maestro/` 前缀的工作分支。
+4. Maestro 同步 `origin/master` 并创建带 `maestro/` 前缀的工作分支。
 5. Codex 完成一项无风险测试修改并运行仓库验证。
 6. Maestro commit 并 push 工作分支。
 7. Maestro 验证远端分支 SHA 与本地 HEAD 一致。
@@ -322,13 +326,17 @@ Agent 主流程必须是：
 ## 9. Admin and External Dependencies
 
 - [x] 确认 `koa-client-code/koa-client-code` 的真实默认分支为 `master`。
-- [ ] 确认允许的自动化分支前缀，例如 `maestro/`。
+- [x] 确认允许的自动化分支前缀为 `maestro/`。
 - [x] 为 Maestro 运行账号提供目标仓库读取和工作分支写入权限。
-- [x] 当前 SSH 身份可非交互认证，且 Host Key 已可信；是否为专用 Key 仍待管理员确认。
+- [x] 当前 SSH 身份可非交互认证，Host Key 已可信，且已确认为 Maestro 正式专用 Key。
 - [x] 确认 Maestro 运行环境能访问 GitLab SSH 服务。
 - [x] 已在独立工作分支 `maestro/git-smoke-20260908-1507` 完成首次写入验收。
-- [ ] 确认 TAPD 中“人工评审”和“完成”对应的原始状态值。
-- [ ] 确认人工评审反馈回到 TAPD 后使用哪个状态重新触发开发；默认建议直接回到 `developing`。
+- [x] 确认 TAPD 中“人工评审”和“完成”对应的原始状态值分别为 `status_5` 和 `resolved`。
+- [x] 确认人工评审反馈回到 TAPD 后使用 `developing` 状态重新触发开发。
+
+正式环境配置记录：`elixir/.env.gitlab.local` 中 TAPD 凭证变量、Workspace、目标仓库、`master` 默认分支和 `maestro/` 工作分支前缀均已填写；该文件保持本地私密且不受 Git 跟踪。2026-09-09 使用更新后的凭证执行只读健康检查，`GET /quickstart/testauth` 返回 HTTP 200，TAPD 凭证已通过运行时有效性验证。
+
+本地一键启动命令：`./elixir/bin/start-tapd-gitlab`。该脚本自动加载上述私密环境文件，默认仅监听 `127.0.0.1:4000`。
 
 无需管理员提供 GitLab API User、API Password、Access Token、GitLab 版本或 License Tier。
 
@@ -337,10 +345,11 @@ Agent 主流程必须是：
 ### Blocking
 
 1. **[已解决]** 默认分支为 `master`（2026-09-08 通过 Git SSH `ls-remote --symref` 确认）。
-2. **[项目管理员]** 允许 Maestro 创建哪些前缀的工作分支？
-3. **[基础设施/GitLab 管理员]** Maestro 运行账号使用用户 SSH Key 还是可写 Deploy Key？
-4. **[TAPD 管理员]** 人工评审状态和返工回开发状态的准确 raw status 是什么？
+2. **[已解决]** 允许 Maestro 创建 `maestro/` 前缀的工作分支。
+3. **[已解决]** 当前 SSH Key 已确认为 Maestro 正式专用 Key，并具备目标仓库工作分支写权限。
+4. **[已解决]** 人工评审为 `status_5`，完成为 `resolved`，评审返工后使用 `developing` 重新触发开发。
 5. **[已解决]** 首次真实 push 验收使用 `koa-client-code/koa-client-code` 的 `maestro/git-smoke-20260908-1507` 分支。
+6. **[已解决]** 已更新 `.env.gitlab.local` 中匹配的 TAPD API 用户和 API Token；2026-09-09 只读 `testauth` 返回 HTTP 200。
 
 ### Non-Blocking
 

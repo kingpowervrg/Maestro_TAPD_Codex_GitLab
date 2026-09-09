@@ -6,6 +6,14 @@ defmodule SymphonyElixir.Repo.Git.Arguments do
   def append_depth(args, depth) when is_binary(depth) and depth != "", do: args ++ ["--depth", depth]
   def append_depth(args, _depth), do: args
 
+  @spec append_filter([String.t()], String.t() | term()) :: [String.t()]
+  def append_filter(args, filter) when is_binary(filter) and filter != "", do: args ++ ["--filter", filter]
+  def append_filter(args, _filter), do: args
+
+  @spec append_sparse([String.t()], boolean()) :: [String.t()]
+  def append_sparse(args, true), do: args ++ ["--sparse"]
+  def append_sparse(args, _sparse), do: args
+
   @spec append_branch([String.t()], String.t() | term()) :: [String.t()]
   def append_branch(args, branch) when is_binary(branch) and branch != "", do: args ++ ["--branch", branch]
   def append_branch(args, _branch), do: args

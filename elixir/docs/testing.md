@@ -31,6 +31,14 @@ Useful focused targets:
 - `make agent-provider-smoke`
 - `make worker-daemon-check`
 
+For changes to large-repository bootstrap behavior, run the Repo Core CLI and
+Git-only template tests together:
+
+```bash
+mix test test/symphony_elixir/repo_cli_test.exs \
+  test/symphony_elixir/workflow_templates_test.exs
+```
+
 Target definitions live in [`../Makefile`](../Makefile).
 
 ## Tracker Smoke

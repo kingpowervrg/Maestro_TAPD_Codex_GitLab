@@ -40,6 +40,11 @@ tracker:
       rework: rework
       resolved: resolved
       rejected: rejected
+    policy_by_route_key:
+      merging:
+        action: wait
+      rework:
+        action: wait
 polling:
   interval_ms: 30000
 workspace:
@@ -61,9 +66,9 @@ hooks:
       exit 1
     fi
     if [ -n "${SOURCE_REPO_BASE_BRANCH:-}" ]; then
-      "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/bin/repo" clone "$SOURCE_REPO_URL" repo --depth 1 --branch "$SOURCE_REPO_BASE_BRANCH"
+      GIT_LFS_SKIP_SMUDGE=1 "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/bin/repo" clone "$SOURCE_REPO_URL" repo --depth 1 --filter blob:none --sparse --branch "$SOURCE_REPO_BASE_BRANCH"
     else
-      "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/bin/repo" clone "$SOURCE_REPO_URL" repo --depth 1
+      GIT_LFS_SKIP_SMUDGE=1 "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/bin/repo" clone "$SOURCE_REPO_URL" repo --depth 1 --filter blob:none --sparse
     fi
   before_remove: |
     # Optional target-repository cleanup belongs here.
