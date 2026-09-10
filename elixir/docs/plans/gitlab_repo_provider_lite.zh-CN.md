@@ -1,6 +1,6 @@
 # GitLab Git-only 基础操作落地计划
 
-状态：In Progress（代码、Git SSH 写入验证和质量门禁已完成；TAPD 凭证健康检查及端到端灰度待完成）
+状态：In Progress（代码、Git SSH 写入验证、质量门禁和 TAPD 只读候选任务校验已完成；端到端灰度待完成）
 版本：Lite（仅 Git 基础操作）  
 创建日期：2026-09-02  
 最后验证：2026-09-09
@@ -125,7 +125,7 @@ tracker:
 - `developing`：修改、验证、commit、push。
 - `review/status_5`：人工等待状态，Maestro 不自动执行。
 - `merging`：不加入 `active_states`，Maestro 不自动执行 land/merge。
-- `resolved/rejected`：终态。
+- `status_6/status_8`：当前 Workspace 工作项类型实际返回的完成终态；`status_8` 显示名为 `Online`，仅适用于需求主任务类型。当前流程不存在拒绝终态，因此禁用 rejected 路由。
 - 如需返工，人工把评审要求同步到 TAPD，再将工作项移回 `developing`。
 
 ### 5.5 目标运行配置
@@ -278,6 +278,10 @@ Agent 主流程必须是：
 
 TAPD 只读 smoke 记录：模板配置校验通过；2026-09-09 使用更新后的 `.env.gitlab.local` 凭证重跑 `GET /quickstart/testauth`，返回 HTTP 200，TAPD API 认证通过。未执行任何工作项写操作。
 
+TAPD 候选任务只读验证：2026-09-09 根据 `/workflows/last_steps` 返回值修正 5 种工作项类型的终态后，`fetch_candidate_issues` 成功返回 39 个 `status_4` 候选项，未执行 Agent、TAPD 写入或 Git 写入。正式重启前必须确认应启用的工作项类型及历史候选项处理范围，避免批量误触发。Dashboard LiveView socket 路径也已修正为运行时注入的 `/live`。
+
+TAPD 启动性能修正：启动终态清理仅查询 `SYMPHONY_WORKSPACE_ROOT` 下现存的 `TAPD-*` 任务目录，并禁用该清理查询的依赖关系补全；不再分页读取全部历史完成任务后逐项调用 `get_time_relative_stories`。
+
 ### 6.2 Nice-to-Have（P1）
 
 - [ ] 新增独立 `publish-branch` workspace skill，只负责验证、push 和远端 SHA 校验，不创建 PR。
@@ -331,12 +335,14 @@ TAPD 只读 smoke 记录：模板配置校验通过；2026-09-09 使用更新后
 - [x] 当前 SSH 身份可非交互认证，Host Key 已可信，且已确认为 Maestro 正式专用 Key。
 - [x] 确认 Maestro 运行环境能访问 GitLab SSH 服务。
 - [x] 已在独立工作分支 `maestro/git-smoke-20260908-1507` 完成首次写入验收。
-- [x] 确认 TAPD 中“人工评审”和“完成”对应的原始状态值分别为 `status_5` 和 `resolved`。
+- [x] 确认 TAPD 中“人工评审”和“完成”对应的原始状态值分别为 `status_5` 和 `status_6`；需求主任务类型 `1154044737001000037` 还有显示名为 `Online` 的第二完成终态 `status_8`。
 - [x] 确认人工评审反馈回到 TAPD 后使用 `developing` 状态重新触发开发。
 
 正式环境配置记录：`elixir/.env.gitlab.local` 中 TAPD 凭证变量、Workspace、目标仓库、`master` 默认分支和 `maestro/` 工作分支前缀均已填写；该文件保持本地私密且不受 Git 跟踪。2026-09-09 使用更新后的凭证执行只读健康检查，`GET /quickstart/testauth` 返回 HTTP 200，TAPD 凭证已通过运行时有效性验证。
 
 本地一键启动命令：`./elixir/bin/start-tapd-gitlab`。该脚本自动加载上述私密环境文件，默认仅监听 `127.0.0.1:4000`。
+
+本地一键重启命令：`./elixir/bin/restart-tapd-gitlab`。该脚本先构建最新可执行程序，再仅关闭占用配置端口且命令行匹配当前项目 `tapd/git/codex` 运行实例的进程，端口释放后以前台方式启动新实例；如端口属于其他程序则拒绝终止。
 
 无需管理员提供 GitLab API User、API Password、Access Token、GitLab 版本或 License Tier。
 
@@ -347,7 +353,7 @@ TAPD 只读 smoke 记录：模板配置校验通过；2026-09-09 使用更新后
 1. **[已解决]** 默认分支为 `master`（2026-09-08 通过 Git SSH `ls-remote --symref` 确认）。
 2. **[已解决]** 允许 Maestro 创建 `maestro/` 前缀的工作分支。
 3. **[已解决]** 当前 SSH Key 已确认为 Maestro 正式专用 Key，并具备目标仓库工作分支写权限。
-4. **[已解决]** 人工评审为 `status_5`，完成为 `resolved`，评审返工后使用 `developing` 重新触发开发。
+4. **[已解决]** 人工评审为 `status_5`，完成为 `status_6`，需求主任务类型 `1154044737001000037` 的另一完成终态为 `status_8` (`Online`)，评审返工后使用 `developing` 重新触发开发。
 5. **[已解决]** 首次真实 push 验收使用 `koa-client-code/koa-client-code` 的 `maestro/git-smoke-20260908-1507` 分支。
 6. **[已解决]** 已更新 `.env.gitlab.local` 中匹配的 TAPD API 用户和 API Token；2026-09-09 只读 `testauth` 返回 HTTP 200。
 

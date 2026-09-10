@@ -127,6 +127,13 @@ defmodule SymphonyElixir.Workspace do
   def remove_issue_workspaces(identifier, worker_host, workspace_path),
     do: Cleanup.remove_issue_workspaces(identifier, worker_host, workspace_path, cleanup_opts())
 
+  @spec local_issue_identifiers() ::
+          {:ok, [String.t()]} | {:error, {:workspace_root_list_failed, Path.t(), File.posix()}}
+  def local_issue_identifiers do
+    Config.settings!().workspace.root
+    |> Paths.local_issue_identifiers()
+  end
+
   @spec run_before_run_hook(Path.t(), map() | String.t() | nil, worker_host()) ::
           :ok | {:error, term()}
   def run_before_run_hook(workspace, issue_or_identifier, worker_host \\ nil) when is_binary(workspace) do

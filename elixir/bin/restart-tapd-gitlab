@@ -1,0 +1,148 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+elixir_dir="$(cd -- "${script_dir}/.." && pwd)"
+env_file="${SYMPHONY_TAPD_GITLAB_ENV_FILE:-${elixir_dir}/.env.gitlab.local}"
+
+if [[ ! -f "${env_file}" ]]; then
+  printf 'Missing TAPD/GitLab environment file: %s\n' "${env_file}" >&2
+  exit 1
+fi
+
+set -a
+# shellcheck disable=SC1090
+source "${env_file}"
+set +a
+
+dashboard_host="${SYMPHONY_DASHBOARD_HOST:-127.0.0.1}"
+dashboard_port="${SYMPHONY_DASHBOARD_PORT:-4000}"
+runtime_payload="${script_dir}/symphony.escript"
+
+if ! command -v mise >/dev/null 2>&1; then
+  printf '%s\n' 'mise is required but was not found in PATH.' >&2
+  exit 127
+fi
+
+if ! command -v lsof >/dev/null 2>&1; then
+  printf '%s\n' 'lsof is required to identify the existing dashboard process safely.' >&2
+  exit 127
+fi
+
+process_matches_runtime() {
+  local pid="$1"
+  local argument
+  local next_argument=""
+  local found_host=false
+  local found_payload=false
+  local found_port=false
+  local found_template=false
+  local -a arguments=()
+
+  [[ -r "/proc/${pid}/cmdline" ]] || return 1
+  mapfile -d '' -t arguments < "/proc/${pid}/cmdline"
+
+  for argument in "${arguments[@]}"; do
+    if [[ "${argument}" == "${runtime_payload}" ]]; then
+      found_payload=true
+    fi
+
+    case "${next_argument}" in
+      host)
+        [[ "${argument}" == "${dashboard_host}" ]] && found_host=true
+        ;;
+
+      port)
+        [[ "${argument}" == "${dashboard_port}" ]] && found_port=true
+        ;;
+
+      template)
+        [[ "${argument}" == "tapd/git/codex" ]] && found_template=true
+        ;;
+    esac
+
+    case "${argument}" in
+      --host) next_argument=host ;;
+      --port) next_argument=port ;;
+      --template) next_argument=template ;;
+      *) next_argument="" ;;
+    esac
+  done
+
+  [[ "${found_payload}" == true && "${found_host}" == true && "${found_port}" == true && "${found_template}" == true ]]
+}
+
+wrapper_pid_for() {
+  local listener_pid="$1"
+  local parent_pid
+  local parent_cwd
+  local argument
+  local -a arguments=()
+
+  parent_pid="$(ps -o ppid= -p "${listener_pid}" | tr -d '[:space:]')"
+  [[ -n "${parent_pid}" && -r "/proc/${parent_pid}/cmdline" ]] || return 1
+
+  parent_cwd="$(readlink -f "/proc/${parent_pid}/cwd" 2>/dev/null || true)"
+  [[ "${parent_cwd}" == "${elixir_dir}" ]] || return 1
+
+  mapfile -d '' -t arguments < "/proc/${parent_pid}/cmdline"
+
+  for argument in "${arguments[@]}"; do
+    if [[ "${argument}" == "./bin/symphony" || "${argument}" == "${script_dir}/symphony" ]]; then
+      printf '%s\n' "${parent_pid}"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+listener_pids() {
+  lsof -nP -t -iTCP:"${dashboard_port}" -sTCP:LISTEN 2>/dev/null | sort -u
+}
+
+printf '%s\n' 'Building the latest Maestro executable before restart.'
+cd "${elixir_dir}"
+mise exec -- mix build
+
+mapfile -t existing_pids < <(listener_pids)
+
+if ((${#existing_pids[@]} > 0)); then
+  for listener_pid in "${existing_pids[@]}"; do
+    if ! process_matches_runtime "${listener_pid}"; then
+      printf 'Refusing to stop PID %s: port %s is not owned by this tapd/git/codex runtime.\n' \
+        "${listener_pid}" "${dashboard_port}" >&2
+      exit 1
+    fi
+  done
+
+  printf 'Stopping existing Maestro process on %s:%s.\n' "${dashboard_host}" "${dashboard_port}"
+
+  for listener_pid in "${existing_pids[@]}"; do
+    if wrapper_pid="$(wrapper_pid_for "${listener_pid}")"; then
+      kill -TERM "${wrapper_pid}"
+    else
+      kill -TERM "${listener_pid}"
+    fi
+  done
+
+  for _attempt in {1..300}; do
+    if [[ -z "$(listener_pids)" ]]; then
+      break
+    fi
+
+    sleep 0.1
+  done
+
+  if [[ -n "$(listener_pids)" ]]; then
+    printf 'Existing Maestro process did not release port %s within 30 seconds.\n' "${dashboard_port}" >&2
+    exit 1
+  fi
+
+  printf '%s\n' 'Existing Maestro process stopped.'
+else
+  printf 'No existing process is listening on port %s.\n' "${dashboard_port}"
+fi
+
+printf '%s\n' 'Starting the new Maestro process.'
+exec "${script_dir}/start-tapd-gitlab" "$@"

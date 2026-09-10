@@ -87,6 +87,49 @@ defmodule SymphonyElixir.TapdClientTest do
     refute_received {:tapd_request, %{url: "https://api.tapd.cn/stories", params: %{"status" => _status}}}
   end
 
+  test "fetch issue states can skip relation enrichment for startup cleanup" do
+    tracker = tapd_tracker([])
+    test_pid = self()
+
+    assert {:ok, [issue]} =
+             Adapter.fetch_issue_states_by_ids(tracker, ["story-1"],
+               include_relations?: false,
+               request_fun: fn request ->
+                 send(test_pid, {:tapd_request, request})
+
+                 case request do
+                   %{url: "https://api.tapd.cn/stories", params: %{"id" => "story-1"}} ->
+                     {:ok,
+                      %{
+                        status: 200,
+                        body: %{
+                          "status" => 1,
+                          "data" => [
+                            %{
+                              "Story" => %{
+                                "id" => "story-1",
+                                "name" => "Story 1",
+                                "status" => "resolved",
+                                "workitem_type_id" => "story"
+                              }
+                            }
+                          ]
+                        }
+                      }}
+
+                   unexpected_request ->
+                     flunk("unexpected TAPD request: #{inspect(unexpected_request)}")
+                 end
+               end
+             )
+
+    assert issue.id == "story-1"
+
+    assert_receive {:tapd_request, %{url: "https://api.tapd.cn/stories", params: %{"id" => "story-1"}}}
+
+    refute_received {:tapd_request, %{url: "https://api.tapd.cn/stories/get_time_relative_stories"}}
+  end
+
   test "fetch_stories_by_status allows multiple workitem types when terminal states match config" do
     tracker = tapd_tracker(terminal_states: ["resolved", "rejected"])
     test_pid = self()

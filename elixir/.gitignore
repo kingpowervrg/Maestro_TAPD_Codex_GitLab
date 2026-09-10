@@ -41,6 +41,7 @@ erl_crash.dump
 /bin/*
 !/bin/symphony
 !/bin/start-tapd-gitlab
+!/bin/restart-tapd-gitlab
 
 # Local environment and auth artifacts.
 .env

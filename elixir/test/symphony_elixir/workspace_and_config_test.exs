@@ -124,6 +124,29 @@ defmodule SymphonyElixir.WorkspaceAndConfigTest do
     def required_capabilities, do: []
   end
 
+  test "local workspace identifiers include only real child directories" do
+    test_root =
+      Path.join(
+        System.tmp_dir!(),
+        "symphony-elixir-local-workspace-identifiers-#{System.unique_integer([:positive])}"
+      )
+
+    workspace_root = Path.join(test_root, "workspaces")
+
+    try do
+      File.mkdir_p!(Path.join(workspace_root, "TAPD-2"))
+      File.mkdir_p!(Path.join(workspace_root, "TAPD-1"))
+      File.write!(Path.join(workspace_root, "not-a-workspace"), "file")
+      File.ln_s!(Path.join(workspace_root, "TAPD-1"), Path.join(workspace_root, "workspace-link"))
+
+      write_workflow_file!(Workflow.workflow_file_path(), workspace_root: workspace_root)
+
+      assert {:ok, ["TAPD-1", "TAPD-2"]} = Workspace.local_issue_identifiers()
+    after
+      File.rm_rf(test_root)
+    end
+  end
+
   test "workspace bootstrap can be implemented in after_create hook" do
     test_root =
       Path.join(

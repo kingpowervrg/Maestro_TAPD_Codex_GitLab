@@ -411,6 +411,27 @@ defmodule SymphonyElixir.ExtensionsTest do
     assert {:ok, [^done]} = SymphonyElixir.Tracker.fetch_terminal_issues()
   end
 
+  test "terminal issue fetch respects explicit startup cleanup issue ids" do
+    done = %Issue{id: "done-1", identifier: "MT-1", state: "Done"}
+    other_done = %Issue{id: "done-2", identifier: "MT-2", state: "Done"}
+    active = %Issue{id: "active-1", identifier: "MT-3", state: "In Progress"}
+
+    Application.put_env(:symphony_elixir, :memory_tracker_issues, [done, other_done, active])
+
+    write_workflow_file!(Workflow.workflow_file_path(),
+      tracker_kind: "memory",
+      tracker_terminal_states: ["Done"]
+    )
+
+    assert {:ok, [^done]} =
+             SymphonyElixir.Tracker.fetch_terminal_issues(
+               issue_ids: ["done-1", "active-1", "missing"],
+               include_relations?: false
+             )
+
+    assert {:ok, []} = SymphonyElixir.Tracker.fetch_terminal_issues(issue_ids: [])
+  end
+
   test "linear adapter delegates reads and validates mutation responses" do
     Application.put_env(:symphony_elixir, :linear_client_module, FakeLinearClient)
     tracker = explicit_linear_tracker()
@@ -1327,6 +1348,11 @@ defmodule SymphonyElixir.ExtensionsTest do
       )
 
     start_test_endpoint(orchestrator: orchestrator_name, snapshot_timeout_ms: 50)
+
+    page_html = build_conn() |> get("/") |> html_response(200)
+    assert page_html =~ ~s(name="live-socket-path" content="/live")
+    assert page_html =~ ~s|querySelector("meta[name='live-socket-path']")|
+    refute page_html =~ "{@live_socket_path}"
 
     {:ok, view, html} = live(build_conn(), "/")
     assert html =~ "Operations Dashboard"

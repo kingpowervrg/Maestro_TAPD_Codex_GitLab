@@ -142,6 +142,8 @@ Why isolated workspaces matter:
 - failed runs can be inspected and cleaned up separately;
 - reviewers can reconstruct what happened in one agent run.
 
+For TAPD, startup terminal cleanup is scoped to existing local workspace directories whose names start with `TAPD-`. Maestro reads only those issue states and skips relation enrichment during cleanup. This prevents startup from scanning every historical terminal work item in a large TAPD workspace.
+
 ## Safe rollout path
 
 ### Step 1: local demo

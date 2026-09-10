@@ -129,14 +129,15 @@ defmodule SymphonyElixir.Tracker.Tapd.Adapter do
     do: Client.fetch_candidate_issues(tracker, opts)
 
   @spec fetch_issues_by_states(TrackerConfig.t(), [String.t()], keyword()) :: {:ok, [term()]} | {:error, term()}
-  def fetch_issues_by_states(tracker, states, _opts \\ []) when is_map(tracker) and is_list(states) do
-    Client.fetch_issues_by_states(states, tracker)
+  def fetch_issues_by_states(tracker, states, opts \\ [])
+      when is_map(tracker) and is_list(states) and is_list(opts) do
+    Client.fetch_issues_by_states(states, tracker, opts)
   end
 
   @spec fetch_issue_states_by_ids(TrackerConfig.t(), [String.t()], keyword()) :: {:ok, [term()]} | {:error, term()}
-  def fetch_issue_states_by_ids(tracker, issue_ids, _opts \\ [])
-      when is_map(tracker) and is_list(issue_ids) do
-    Client.fetch_issue_states_by_ids(issue_ids, tracker)
+  def fetch_issue_states_by_ids(tracker, issue_ids, opts \\ [])
+      when is_map(tracker) and is_list(issue_ids) and is_list(opts) do
+    Client.fetch_issue_states_by_ids(issue_ids, tracker, opts)
   end
 
   @spec normalize_issue_id(TrackerConfig.t(), String.t()) :: String.t() | nil

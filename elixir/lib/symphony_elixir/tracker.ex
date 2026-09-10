@@ -121,8 +121,19 @@ defmodule SymphonyElixir.Tracker do
   def fetch_terminal_issues(opts \\ []) do
     {adapter, tracker} = current!()
     terminal = Config.terminal_states(tracker) || []
+    explicit_issue_ids? = Keyword.has_key?(opts, :issue_ids)
 
-    case candidate_issue_ids(tracker) do
+    issue_ids =
+      if explicit_issue_ids? do
+        opts |> Keyword.get(:issue_ids, []) |> normalize_string_list()
+      else
+        candidate_issue_ids(tracker)
+      end
+
+    case issue_ids do
+      [] when explicit_issue_ids? ->
+        {:ok, []}
+
       [] ->
         dispatch(adapter, :fetch_issues_by_states, [tracker, terminal, opts])
 

@@ -316,7 +316,12 @@ defmodule SymphonyElixir.WorkflowTemplatesTest do
         expected_phase = Map.fetch!(expected_phase_by_route_key, route_key)
 
         assert WorkflowLifecycle.valid_phase?(expected_phase)
-        assert WorkflowLifecycle.phase_for_state(raw_state, state_phase_map) == expected_phase
+
+        if RoutePolicy.disabled_route?(effective_workflow.policy_by_route_key, route_key) do
+          assert is_nil(raw_state)
+        else
+          assert WorkflowLifecycle.phase_for_state(raw_state, state_phase_map) == expected_phase
+        end
       end
     end
   end
@@ -812,11 +817,31 @@ defmodule SymphonyElixir.WorkflowTemplatesTest do
 
     assert settings.repo.provider.kind == RepoProviderKinds.git()
     assert settings.tracker.lifecycle["active_states"] == ["status_4", "developing"]
+    assert settings.tracker.lifecycle["terminal_states"] == ["status_6", "status_8"]
+
+    workflows_by_type = settings.tracker.lifecycle["workflows_by_type"]
+
+    assert Map.keys(workflows_by_type) |> Enum.sort() ==
+             ~w(1154044737001000037 1154044737001000148 1154044737001000150 1154044737001000151 1154044737001000153)
+
+    assert workflows_by_type["1154044737001000037"]["terminal_states"] == ["status_6", "status_8"]
+
+    for workitem_type_id <- ~w(1154044737001000148 1154044737001000150 1154044737001000151 1154044737001000153) do
+      workflow = Map.fetch!(workflows_by_type, workitem_type_id)
+      assert workflow["terminal_states"] == ["status_6"]
+    end
 
     assert get_in(config, ["tracker", "lifecycle", "policy_by_route_key"]) == %{
              "merging" => %{"action" => "wait"},
+             "rejected" => %{"action" => "disabled"},
              "rework" => %{"action" => "wait"}
            }
+
+    settings.tracker
+    |> SymphonyElixir.Tracker.Tapd.WorkflowConfig.configured_workflows_by_type()
+    |> Enum.each(fn {workitem_type_id, workflow} ->
+      assert :ok == SymphonyElixir.Workflow.Validator.validate_workflow(workitem_type_id, workflow)
+    end)
 
     assert :ok == SymphonyElixir.RepoProvider.validate_config(settings.repo)
 

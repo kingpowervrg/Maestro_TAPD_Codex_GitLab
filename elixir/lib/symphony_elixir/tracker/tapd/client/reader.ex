@@ -31,9 +31,10 @@ defmodule SymphonyElixir.Tracker.Tapd.Client.Reader do
     end
   end
 
-  @spec fetch_issues_by_states([String.t()], map()) :: {:ok, [Issue.t()]} | {:error, term()}
-  def fetch_issues_by_states(state_names, tracker) when is_list(state_names) and is_map(tracker) do
-    fetch_stories_by_status(state_names, tracker: tracker)
+  @spec fetch_issues_by_states([String.t()], map(), keyword()) :: {:ok, [Issue.t()]} | {:error, term()}
+  def fetch_issues_by_states(state_names, tracker, opts \\ [])
+      when is_list(state_names) and is_map(tracker) and is_list(opts) do
+    fetch_stories_by_status(state_names, Keyword.put(opts, :tracker, tracker))
     |> Errors.map_result(:fetch_issues_by_states)
   end
 
@@ -73,7 +74,7 @@ defmodule SymphonyElixir.Tracker.Tapd.Client.Reader do
                    [],
                    request_fun
                  ) do
-            StoryRelations.enrich_issues(issues, tracker, request_fun, &fetch_story_by_id/3)
+            maybe_enrich_issues(issues, tracker, request_fun, opts)
           end
       end
 
@@ -93,7 +94,7 @@ defmodule SymphonyElixir.Tracker.Tapd.Client.Reader do
       |> Enum.uniq()
       |> do_fetch_stories_by_ids(tracker, request_fun)
       |> case do
-        {:ok, issues} -> StoryRelations.enrich_issues(issues, tracker, request_fun, &fetch_story_by_id/3)
+        {:ok, issues} -> maybe_enrich_issues(issues, tracker, request_fun, opts)
         error -> error
       end
 
@@ -191,6 +192,14 @@ defmodule SymphonyElixir.Tracker.Tapd.Client.Reader do
     case Fields.normalize_string(workitem_type_id) do
       nil -> params
       value -> Map.put(params, "workitem_type_id", value)
+    end
+  end
+
+  defp maybe_enrich_issues(issues, tracker, request_fun, opts) do
+    if Keyword.get(opts, :include_relations?, true) do
+      StoryRelations.enrich_issues(issues, tracker, request_fun, &fetch_story_by_id/3)
+    else
+      {:ok, issues}
     end
   end
 

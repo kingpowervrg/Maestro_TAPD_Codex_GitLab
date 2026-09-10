@@ -21,6 +21,7 @@ defmodule SymphonyElixirWeb.Layouts do
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="csrf-token" content={@csrf_token} />
+        <meta name="live-socket-path" content={@live_socket_path} />
         <title>Maestro Observability</title>
         <script defer src={BrowserPaths.phoenix_html_js_path()}></script>
         <script defer src={BrowserPaths.phoenix_js_path()}></script>
@@ -30,11 +31,14 @@ defmodule SymphonyElixirWeb.Layouts do
             var csrfToken = document
               .querySelector("meta[name='csrf-token']")
               ?.getAttribute("content");
+            var liveSocketPath = document
+              .querySelector("meta[name='live-socket-path']")
+              ?.getAttribute("content");
 
-            if (!window.Phoenix || !window.LiveView) return;
+            if (!window.Phoenix || !window.LiveView || !liveSocketPath) return;
 
             var liveSocket = new window.LiveView.LiveSocket(
-              "{@live_socket_path}",
+              liveSocketPath,
               window.Phoenix.Socket,
               {
               params: {_csrf_token: csrfToken}

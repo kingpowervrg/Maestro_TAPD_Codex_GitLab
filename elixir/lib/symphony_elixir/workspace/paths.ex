@@ -16,6 +16,31 @@ defmodule SymphonyElixir.Workspace.Paths do
     String.replace(identifier || "issue", ~r/[^a-zA-Z0-9._-]/, "_")
   end
 
+  @spec local_issue_identifiers(Path.t()) ::
+          {:ok, [String.t()]} | {:error, {:workspace_root_list_failed, Path.t(), File.posix()}}
+  def local_issue_identifiers(workspace_root) when is_binary(workspace_root) do
+    case File.ls(workspace_root) do
+      {:ok, entries} ->
+        identifiers =
+          entries
+          |> Enum.filter(&local_workspace_directory?(workspace_root, &1))
+          |> Enum.sort()
+
+        {:ok, identifiers}
+
+      {:error, :enoent} ->
+        {:ok, []}
+
+      {:error, reason} ->
+        {:error, {:workspace_root_list_failed, workspace_root, reason}}
+    end
+  end
+
+  defp local_workspace_directory?(workspace_root, entry) do
+    entry == safe_identifier(entry) and
+      match?({:ok, %File.Stat{type: :directory}}, File.lstat(Path.join(workspace_root, entry)))
+  end
+
   @spec workspace_path_for_issue(String.t(), Path.t(), worker_host()) ::
           {:ok, Path.t()} | {:error, term()}
   def workspace_path_for_issue(safe_id, workspace_root, nil)

@@ -14,6 +14,8 @@ defmodule SymphonyElixir.Orchestrator.ServerOptions do
   alias SymphonyElixir.Orchestrator.Runtime
   alias SymphonyElixir.Orchestrator.State
   alias SymphonyElixir.Tracker
+  alias SymphonyElixir.Tracker.Config, as: TrackerConfig
+  alias SymphonyElixir.Tracker.Kinds, as: TrackerKinds
   alias SymphonyElixir.Workspace
 
   @spec poll_cycle_opts() :: keyword()
@@ -87,7 +89,7 @@ defmodule SymphonyElixir.Orchestrator.ServerOptions do
   @spec terminal_cleanup_opts() :: keyword()
   def terminal_cleanup_opts do
     [
-      fetch_terminal_issues: fn -> Tracker.fetch_terminal_issues() end,
+      fetch_terminal_issues: &fetch_terminal_issues_for_cleanup/0,
       cleanup_workspace: &cleanup_issue_workspace/1,
       emit_event: fn level, event, extra_fields ->
         Events.emit(level, event, nil, nil, extra_fields)
@@ -127,4 +129,22 @@ defmodule SymphonyElixir.Orchestrator.ServerOptions do
   end
 
   def cleanup_issue_workspace(_identifier, _worker_host, _workspace_path), do: :ok
+
+  defp fetch_terminal_issues_for_cleanup do
+    tracker = TrackerConfig.current!()
+
+    if TrackerConfig.kind(tracker) == TrackerKinds.tapd() do
+      with {:ok, issue_identifiers} <- Workspace.local_issue_identifiers() do
+        issue_ids =
+          issue_identifiers
+          |> Enum.filter(&String.starts_with?(&1, "TAPD-"))
+          |> Enum.map(&Tracker.normalize_issue_id(tracker, &1))
+          |> Enum.reject(&is_nil/1)
+
+        Tracker.fetch_terminal_issues(issue_ids: issue_ids, include_relations?: false)
+      end
+    else
+      Tracker.fetch_terminal_issues()
+    end
+  end
 end

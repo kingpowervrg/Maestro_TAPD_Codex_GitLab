@@ -22,29 +22,40 @@ tracker:
       - status_4
       - developing
     terminal_states:
-      - resolved
-      - rejected
+      - status_6
+      - status_8
     state_phase_map:
       status_4: todo
       developing: in_progress
       status_5: human_review
       merging: merging
       rework: rework
-      resolved: done
-      rejected: canceled
+      status_6: done
+      status_8: done
     raw_state_by_route_key:
       planning: status_4
       developing: developing
       review: status_5
       merging: merging
       rework: rework
-      resolved: resolved
-      rejected: rejected
+      resolved: status_6
     policy_by_route_key:
       merging:
         action: wait
       rework:
         action: wait
+      rejected:
+        action: disabled
+    workflows_by_type:
+      "1154044737001000037": {}
+      "1154044737001000148":
+        terminal_states: [status_6]
+      "1154044737001000150":
+        terminal_states: [status_6]
+      "1154044737001000151":
+        terminal_states: [status_6]
+      "1154044737001000153":
+        terminal_states: [status_6]
 polling:
   interval_ms: 30000
 workspace:

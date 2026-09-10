@@ -10,9 +10,10 @@ defmodule SymphonyElixir.Tracker.Tapd.Client do
   def fetch_candidate_issues(tracker, opts \\ []) when is_map(tracker) and is_list(opts),
     do: Reader.fetch_candidate_issues(tracker, opts)
 
-  @spec fetch_issues_by_states([String.t()], map()) :: {:ok, [Issue.t()]} | {:error, term()}
-  def fetch_issues_by_states(state_names, tracker) when is_list(state_names) and is_map(tracker) do
-    Reader.fetch_issues_by_states(state_names, tracker)
+  @spec fetch_issues_by_states([String.t()], map(), keyword()) :: {:ok, [Issue.t()]} | {:error, term()}
+  def fetch_issues_by_states(state_names, tracker, opts \\ [])
+      when is_list(state_names) and is_map(tracker) and is_list(opts) do
+    Reader.fetch_issues_by_states(state_names, tracker, opts)
   end
 
   @spec fetch_issue_states_by_ids([String.t()], map(), keyword()) :: {:ok, [Issue.t()]} | {:error, term()}

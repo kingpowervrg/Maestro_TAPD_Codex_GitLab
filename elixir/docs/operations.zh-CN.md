@@ -142,6 +142,8 @@ export SYMPHONY_WORKSPACE_ROOT=/path/to/isolated/maestro-workspaces
 - 失败后可以单独查看和清理；
 - reviewer 更容易复盘一次 Agent 执行。
 
+对于 TAPD，启动时的终态清理仅检查名称以 `TAPD-` 开头、且已实际存在的本地工作区目录。清理阶段只读取这些任务的状态，并跳过依赖关系补全，从而避免大型 TAPD Workspace 在启动时遍历全部历史终态工作项。
+
 ## 安全 rollout 路径
 
 ### 第一步：本地 demo
