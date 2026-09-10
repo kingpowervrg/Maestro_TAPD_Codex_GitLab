@@ -63,6 +63,7 @@ defmodule SymphonyElixir.Tracker.Tapd.Adapter do
           api_secret: "TAPD_API_PASSWORD"
         },
         provider: %{
+          assignee: "TAPD_ASSIGNEE",
           platform: %{
             comment_author: "TAPD_COMMENT_AUTHOR"
           }

@@ -82,7 +82,14 @@ TAPD:
 export TAPD_API_USER=...
 export TAPD_API_PASSWORD=...
 export TAPD_WORKSPACE_ID=...
+export TAPD_ASSIGNEE='Your TAPD display name'
 ```
+
+`tracker.provider.assignee` limits TAPD dispatch to Stories whose `owner`
+field contains the configured display name. The `tapd/git/codex` launcher
+requires `TAPD_ASSIGNEE` so it cannot accidentally run without an assignee
+filter. Use the TAPD display name without the trailing semicolon returned by
+the API.
 
 Linear:
 
@@ -107,10 +114,20 @@ export CNB_TOKEN=...
 Repository inputs:
 
 ```bash
-export SOURCE_REPO_URL=https://github.com/owner/repo.git
-export SOURCE_REPO_BASE_BRANCH=main
+export SOURCE_REPO_URL=git@example.com:group/repository.git
+export SOURCE_REPO_BASE_BRANCH=master
+export SOURCE_REPO_BRANCH_WORK_PREFIX=symphony
 export SOURCE_REPO_PROVIDER_REPOSITORY=owner/repo
 ```
+
+For `tapd/git/codex`, `SOURCE_REPO_BASE_BRANCH` is the final human-owned
+integration branch. A Story can select a different development base with an
+explicit description line such as `代码分支： v24.9.0/battle_royale`. Maestro
+validates that value, clones or fetches it for that Story, and directs Codex to
+create its Story-specific working branch from it. If the line is absent or
+invalid, the configured integration branch is the fallback. Automation never
+pushes either base directly; after validation it pushes the working branch and
+hands the Story to human review.
 
 Use least-privilege credentials when possible. Avoid using high-privilege personal tokens for long-running unattended operation.
 

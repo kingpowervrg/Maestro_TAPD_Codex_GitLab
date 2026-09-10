@@ -7,23 +7,17 @@ defmodule SymphonyElixir.Workspace.Context do
   @type issue_context :: %{
           issue_id: term(),
           issue_identifier: String.t(),
-          run_id: String.t() | nil
+          run_id: String.t() | nil,
+          branch_name: String.t() | nil
         }
 
   @spec issue_context(map() | String.t() | nil) :: issue_context()
-  def issue_context(%{id: issue_id, identifier: identifier, run_id: run_id}) do
+  def issue_context(%{id: issue_id, identifier: identifier} = issue) do
     %{
       issue_id: issue_id,
       issue_identifier: identifier || "issue",
-      run_id: run_id
-    }
-  end
-
-  def issue_context(%{id: issue_id, identifier: identifier}) do
-    %{
-      issue_id: issue_id,
-      issue_identifier: identifier || "issue",
-      run_id: nil
+      run_id: Map.get(issue, :run_id),
+      branch_name: Map.get(issue, :branch_name)
     }
   end
 
@@ -31,7 +25,8 @@ defmodule SymphonyElixir.Workspace.Context do
     %{
       issue_id: nil,
       issue_identifier: identifier,
-      run_id: nil
+      run_id: nil,
+      branch_name: nil
     }
   end
 
@@ -39,7 +34,8 @@ defmodule SymphonyElixir.Workspace.Context do
     %{
       issue_id: nil,
       issue_identifier: "issue",
-      run_id: nil
+      run_id: nil,
+      branch_name: nil
     }
   end
 

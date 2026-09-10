@@ -7,6 +7,8 @@ defmodule SymphonyElixir.Workspace.Hooks do
   alias SymphonyElixir.Workspace.AutomationPack
   alias SymphonyElixir.Workspace.Paths
 
+  @issue_branch_env "SYMPHONY_ISSUE_BRANCH_NAME"
+
   @type worker_host :: String.t() | nil
   @type issue_context :: map()
   @type hooks_config :: map()
@@ -129,6 +131,7 @@ defmodule SymphonyElixir.Workspace.Hooks do
     script =
       [
         workspace_automation_remote_assign(workspace),
+        issue_branch_remote_assign(issue_context),
         "cd #{Paths.shell_escape(workspace)}",
         command
       ]
@@ -154,7 +157,7 @@ defmodule SymphonyElixir.Workspace.Hooks do
       Task.async(fn ->
         System.cmd("sh", ["-lc", command],
           cd: workspace,
-          env: workspace_automation_env(workspace),
+          env: workspace_automation_env(workspace, issue_context),
           stderr_to_stdout: true
         )
       end)
@@ -272,13 +275,36 @@ defmodule SymphonyElixir.Workspace.Hooks do
 
   defp hook_timeout_ms(_hooks), do: 30_000
 
-  defp workspace_automation_env(workspace) when is_binary(workspace) do
-    AutomationPack.runtime_env(workspace, AgentProvider.workspace_automation_destination_dir())
+  defp workspace_automation_env(workspace, issue_context)
+       when is_binary(workspace) and is_map(issue_context) do
+    [
+      {@issue_branch_env, present_string(issue_context[:branch_name]) || ""}
+      | AutomationPack.runtime_env(workspace, AgentProvider.workspace_automation_destination_dir())
+    ]
   end
 
   defp workspace_automation_remote_assign(workspace) when is_binary(workspace) do
     AutomationPack.remote_shell_assign(workspace, AgentProvider.workspace_automation_destination_dir())
   end
+
+  defp issue_branch_remote_assign(issue_context) when is_map(issue_context) do
+    branch_name = present_string(issue_context[:branch_name]) || ""
+
+    [
+      Paths.remote_shell_assign(@issue_branch_env, branch_name),
+      "export #{@issue_branch_env}"
+    ]
+    |> Enum.join("\n")
+  end
+
+  defp present_string(value) when is_binary(value) do
+    case String.trim(value) do
+      "" -> nil
+      trimmed -> trimmed
+    end
+  end
+
+  defp present_string(_value), do: nil
 
   defp event_fields_builder(opts) do
     case Keyword.get(opts, :event_fields) do

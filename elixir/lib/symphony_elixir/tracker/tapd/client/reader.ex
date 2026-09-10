@@ -4,7 +4,7 @@ defmodule SymphonyElixir.Tracker.Tapd.Client.Reader do
   alias SymphonyElixir.Issue
   alias SymphonyElixir.Tracker.Config, as: TrackerConfig
   alias SymphonyElixir.Tracker.Tapd.Client.{Errors, Fields, Paths, Request, StoryPayload, StoryRelations, WorkitemTypeScope}
-  alias SymphonyElixir.Tracker.Tapd.WorkflowConfig
+  alias SymphonyElixir.Tracker.Tapd.{ProviderOptions, WorkflowConfig}
 
   @page_limit 100
   @request_timeout_ms 30_000
@@ -13,16 +13,17 @@ defmodule SymphonyElixir.Tracker.Tapd.Client.Reader do
   @spec fetch_candidate_issues(map(), keyword()) :: {:ok, [Issue.t()]} | {:error, term()}
   def fetch_candidate_issues(tracker, opts \\ []) when is_map(tracker) and is_list(opts) do
     request_fun = Keyword.get(opts, :request_fun, &Request.default_request/1)
+    reader_opts = opts |> Keyword.put(:tracker, tracker) |> Keyword.put(:request_fun, request_fun)
 
     case candidate_issue_ids(tracker) do
       issue_ids when is_list(issue_ids) and issue_ids != [] ->
-        fetch_stories_by_ids(issue_ids, tracker: tracker, request_fun: request_fun)
+        fetch_stories_by_ids(issue_ids, reader_opts)
         |> Errors.map_result(:fetch_candidate_issues)
 
       _issue_ids ->
         case TrackerConfig.active_states(tracker) do
           state_names when is_list(state_names) ->
-            fetch_stories_by_status(state_names, tracker: tracker, request_fun: request_fun)
+            fetch_stories_by_status(state_names, reader_opts)
             |> Errors.map_result(:fetch_candidate_issues)
 
           _other ->
@@ -133,6 +134,7 @@ defmodule SymphonyElixir.Tracker.Tapd.Client.Reader do
         "limit" => @page_limit
       }
       |> maybe_put_workitem_type_id(WorkflowConfig.request_workitem_type_id(tracker))
+      |> maybe_put_assignee(ProviderOptions.assignee(tracker))
 
     with {:ok, body} <-
            Request.request("GET", Paths.stories(), params, tracker: tracker, request_fun: request_fun),
@@ -194,6 +196,9 @@ defmodule SymphonyElixir.Tracker.Tapd.Client.Reader do
       value -> Map.put(params, "workitem_type_id", value)
     end
   end
+
+  defp maybe_put_assignee(params, nil), do: params
+  defp maybe_put_assignee(params, assignee), do: Map.put(params, "owner", assignee)
 
   defp maybe_enrich_issues(issues, tracker, request_fun, opts) do
     if Keyword.get(opts, :include_relations?, true) do

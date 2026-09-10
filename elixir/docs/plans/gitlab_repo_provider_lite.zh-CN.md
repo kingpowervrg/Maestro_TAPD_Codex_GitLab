@@ -340,7 +340,7 @@ TAPD 启动性能修正：启动终态清理仅查询 `SYMPHONY_WORKSPACE_ROOT` 
 
 正式环境配置记录：`elixir/.env.gitlab.local` 中 TAPD 凭证变量、Workspace、目标仓库、`master` 默认分支和 `maestro/` 工作分支前缀均已填写；该文件保持本地私密且不受 Git 跟踪。2026-09-09 使用更新后的凭证执行只读健康检查，`GET /quickstart/testauth` 返回 HTTP 200，TAPD 凭证已通过运行时有效性验证。
 
-本地一键启动命令：`./elixir/bin/start-tapd-gitlab`。该脚本自动加载上述私密环境文件，默认仅监听 `127.0.0.1:4000`。
+本地一键启动命令：`./elixir/bin/start-tapd-gitlab`。该脚本自动加载上述私密环境文件，要求配置 `TAPD_ASSIGNEE`，仅派发 `owner` 匹配该 TAPD 显示名的任务，并默认仅监听 `127.0.0.1:4000`。
 
 本地一键重启命令：`./elixir/bin/restart-tapd-gitlab`。该脚本先构建最新可执行程序，再仅关闭占用配置端口且命令行匹配当前项目 `tapd/git/codex` 运行实例的进程，端口释放后以前台方式启动新实例；如端口属于其他程序则拒绝终止。
 

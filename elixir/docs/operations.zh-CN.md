@@ -82,7 +82,13 @@ TAPD：
 export TAPD_API_USER=...
 export TAPD_API_PASSWORD=...
 export TAPD_WORKSPACE_ID=...
+export TAPD_ASSIGNEE='你的 TAPD 显示名'
 ```
+
+`tracker.provider.assignee` 会把 TAPD 派发范围限制为 `owner` 字段包含该
+显示名的 Story。`tapd/git/codex` 启动脚本强制要求配置
+`TAPD_ASSIGNEE`，避免在未设置处理人筛选时误处理任务。请填写 TAPD
+显示名，不要包含 API 返回值末尾的分号。
 
 Linear：
 
@@ -107,10 +113,17 @@ export CNB_TOKEN=...
 仓库输入：
 
 ```bash
-export SOURCE_REPO_URL=https://github.com/owner/repo.git
-export SOURCE_REPO_BASE_BRANCH=main
-export SOURCE_REPO_PROVIDER_REPOSITORY=owner/repo
+export SOURCE_REPO_URL=git@example.com:group/repository.git
+export SOURCE_REPO_BASE_BRANCH=master
+export SOURCE_REPO_BRANCH_WORK_PREFIX=symphony
 ```
+
+对于 `tapd/git/codex`，`SOURCE_REPO_BASE_BRANCH` 表示最终由人工负责合入的
+主干分支。单条 Story 可以在需求描述中用独立一行指定开发基线，例如
+`代码分支： v24.9.0/battle_royale`。Maestro 会校验该值，并为这条 Story
+clone 或 fetch 对应分支，再要求 Codex 从该基线创建 Story 专属工作分支；
+未填写或分支名无效时才回退到主干配置。自动化不会直接推送开发基线或
+主干，而是在验证通过后推送工作分支并交给人工验收。
 
 尽量使用最小权限凭据，避免把高权限个人 token 用于长期无人值守运行。
 

@@ -182,6 +182,36 @@ defmodule SymphonyElixir.WorkspaceAndConfigTest do
     end
   end
 
+  test "workspace hooks receive the issue development branch" do
+    test_root =
+      Path.join(
+        System.tmp_dir!(),
+        "symphony-elixir-workspace-issue-branch-#{System.unique_integer([:positive])}"
+      )
+
+    try do
+      workspace_root = Path.join(test_root, "workspaces")
+
+      write_workflow_file!(Workflow.workflow_file_path(),
+        workspace_root: workspace_root,
+        hook_after_create: "printf '%s\\n' \"$SYMPHONY_ISSUE_BRANCH_NAME\" > issue-branch.txt"
+      )
+
+      issue = %Issue{
+        id: "1",
+        identifier: "TAPD-1",
+        branch_name: "v24.9.0/battle_royale"
+      }
+
+      assert {:ok, workspace} = Workspace.create_for_issue(issue)
+
+      assert File.read!(Path.join(workspace, "issue-branch.txt")) ==
+               "v24.9.0/battle_royale\n"
+    after
+      File.rm_rf(test_root)
+    end
+  end
+
   test "workspace bootstraps bundled root .codex before after_create and keeps repo-local .codex isolated" do
     test_root =
       Path.join(
@@ -3120,6 +3150,22 @@ defmodule SymphonyElixir.WorkspaceAndConfigTest do
              })
 
     assert get_in(TrackerConfig.provider(settings.tracker), ["platform", "comment_author"]) == "symphony"
+  end
+
+  test "TAPD assignee resolves from TAPD_ASSIGNEE env var" do
+    previous_assignee = System.get_env("TAPD_ASSIGNEE")
+    on_exit(fn -> restore_env("TAPD_ASSIGNEE", previous_assignee) end)
+    System.put_env("TAPD_ASSIGNEE", "王权")
+
+    assert {:ok, settings} =
+             Schema.parse(%{
+               tracker: %{
+                 kind: "tapd",
+                 provider: %{"platform" => %{"workspace_id" => "53000000"}}
+               }
+             })
+
+    assert TrackerConfig.provider(settings.tracker)["assignee"] == "王权"
   end
 
   test "schema resolves sandbox policies from explicit and default workspaces" do

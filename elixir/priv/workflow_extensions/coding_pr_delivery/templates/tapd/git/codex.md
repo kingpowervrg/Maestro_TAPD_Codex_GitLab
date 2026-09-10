@@ -14,6 +14,7 @@ tracker:
     api_key: $TAPD_API_USER
     api_secret: $TAPD_API_PASSWORD
   provider:
+    assignee: $TAPD_ASSIGNEE
     platform:
       workspace_id: $TAPD_WORKSPACE_ID
       comment_author: $TAPD_COMMENT_AUTHOR
@@ -76,10 +77,16 @@ hooks:
       echo "SOURCE_REPO_URL is required" >&2
       exit 1
     fi
-    if [ -n "${SOURCE_REPO_BASE_BRANCH:-}" ]; then
-      GIT_LFS_SKIP_SMUDGE=1 "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/bin/repo" clone "$SOURCE_REPO_URL" repo --depth 1 --filter blob:none --sparse --branch "$SOURCE_REPO_BASE_BRANCH"
+    task_base_branch="${SYMPHONY_ISSUE_BRANCH_NAME:-${SOURCE_REPO_BASE_BRANCH:-}}"
+    if [ -n "$task_base_branch" ]; then
+      GIT_LFS_SKIP_SMUDGE=1 "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/bin/repo" clone "$SOURCE_REPO_URL" repo --depth 1 --filter blob:none --sparse --branch "$task_base_branch"
     else
       GIT_LFS_SKIP_SMUDGE=1 "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/bin/repo" clone "$SOURCE_REPO_URL" repo --depth 1 --filter blob:none --sparse
+    fi
+  before_run: |
+    task_base_branch="${SYMPHONY_ISSUE_BRANCH_NAME:-${SOURCE_REPO_BASE_BRANCH:-}}"
+    if [ -n "$task_base_branch" ] && [ -d repo/.git ]; then
+      GIT_LFS_SKIP_SMUDGE=1 git -C repo fetch --no-tags --depth 1 origin "$task_base_branch:refs/remotes/origin/$task_base_branch"
     fi
   before_remove: |
     # Optional target-repository cleanup belongs here.
@@ -114,7 +121,8 @@ Current workflow contract:
 - current route: {% if workflow.route.key %}`{{ workflow.route.key }}`{% else %}`unresolved`{% endif %}; action `{{ workflow.route.action }}`; gate `{{ workflow.gate.status }}/{{ workflow.gate.gate }}`
 - gate reason: {{ workflow.gate.reason }}
 - review handoff raw state: `{{ issue.workflow.raw_state_by_route_key.review }}`
-- base branch: `{{ repo.base_branch }}`
+- Story development base: {% if issue.branch_name %}`{{ issue.branch_name }}` (from the TAPD `代码分支` field){% else %}`{{ repo.base_branch }}` (default because the Story has no `代码分支` field){% endif %}
+- final integration branch: `{{ repo.base_branch }}` (human-owned after acceptance)
 
 Description:
 {% if issue.description %}
@@ -129,6 +137,9 @@ Instructions:
    a true blocker instead of asking for interactive setup.
 2. The automation boundary ends after a working-branch push, remote SHA
    verification, TAPD workpad handoff, and transition to human review.
+   Base the working branch on the Story development base above. Treat that
+   explicit Story branch as authoritative for implementation; it is not a
+   conflict with the final integration branch.
 3. The repository hosting service is only a Git SSH remote. Do not invoke any
    hosting-platform API or create, update, review, approve, check, land, close,
    or merge a change proposal.

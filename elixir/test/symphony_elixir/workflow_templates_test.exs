@@ -816,6 +816,7 @@ defmodule SymphonyElixir.WorkflowTemplatesTest do
            }
 
     assert settings.repo.provider.kind == RepoProviderKinds.git()
+    assert get_in(config, ["tracker", "provider", "assignee"]) == "$TAPD_ASSIGNEE"
     assert settings.tracker.lifecycle["active_states"] == ["status_4", "developing"]
     assert settings.tracker.lifecycle["terminal_states"] == ["status_6", "status_8"]
 
@@ -848,7 +849,14 @@ defmodule SymphonyElixir.WorkflowTemplatesTest do
     after_create = get_in(config, ["hooks", "after_create"])
     assert after_create =~ "GIT_LFS_SKIP_SMUDGE=1"
     assert after_create =~ "--depth 1 --filter blob:none --sparse"
-    assert after_create =~ "--branch \"$SOURCE_REPO_BASE_BRANCH\""
+    assert after_create =~ "SYMPHONY_ISSUE_BRANCH_NAME"
+    assert after_create =~ "--branch \"$task_base_branch\""
+
+    before_run = get_in(config, ["hooks", "before_run"])
+    assert before_run =~ "SYMPHONY_ISSUE_BRANCH_NAME"
+    assert before_run =~ "refs/remotes/origin/$task_base_branch"
+    assert prompt =~ "Story development base"
+    assert prompt =~ "final integration branch"
 
     tool_context =
       SymphonyElixir.Agent.DynamicTool.capture_context(

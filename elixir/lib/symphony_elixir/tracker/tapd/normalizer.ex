@@ -4,7 +4,11 @@ defmodule SymphonyElixir.Tracker.Tapd.Normalizer do
   """
 
   alias SymphonyElixir.Issue
+  alias SymphonyElixir.Tracker.Tapd.StoryBranch
   alias SymphonyElixir.Workflow.Lifecycle, as: WorkflowLifecycle
+
+  @type assignee_filter ::
+          %{optional(:configured_assignee) => String.t(), required(:match_values) => MapSet.t(String.t())} | nil
 
   @spec normalize_story(map(), keyword()) :: Issue.t() | nil
   def normalize_story(story, opts \\ [])
@@ -15,6 +19,8 @@ defmodule SymphonyElixir.Tracker.Tapd.Normalizer do
     state = string_field(story, "status")
     workflow = Keyword.get(opts, :workflow, %{})
     workitem_type_id = string_field(story, "workitem_type_id")
+    assignee_filter = Keyword.get(opts, :assignee_filter)
+    assignees = assignee_values(story)
 
     blocked_by =
       merge_blockers(
@@ -31,13 +37,13 @@ defmodule SymphonyElixir.Tracker.Tapd.Normalizer do
       state: state,
       lifecycle_phase: WorkflowLifecycle.phase_for_state(state, state_phase_map),
       workitem_type_id: normalize_string(workitem_type_id),
-      branch_name: nil,
+      branch_name: StoryBranch.from_description(string_field(story, "description")),
       url: Keyword.get(opts, :workspace_url),
-      assignee_id: nil,
+      assignee_id: assignee_id(assignees),
       blocked_by: blocked_by,
       labels: extract_labels(story),
       workflow: workflow,
-      assigned_to_worker: true,
+      assigned_to_worker: assigned_to_worker?(assignees, assignee_filter),
       created_at: parse_datetime(string_field(story, "created")),
       updated_at: parse_datetime(string_field(story, "modified") || string_field(story, "updated"))
     }
@@ -45,8 +51,57 @@ defmodule SymphonyElixir.Tracker.Tapd.Normalizer do
 
   def normalize_story(_story, _opts), do: nil
 
+  @doc false
+  @spec normalize_assignee_match_value(term()) :: String.t() | nil
+  def normalize_assignee_match_value(value) when is_binary(value) do
+    case value |> String.trim() |> String.downcase() do
+      "" -> nil
+      normalized -> normalized
+    end
+  end
+
+  def normalize_assignee_match_value(_value), do: nil
+
   defp story_identifier(nil), do: nil
   defp story_identifier(story_id), do: "TAPD-" <> story_id
+
+  defp assignee_values(story) do
+    story
+    |> Map.get("owner", Map.get(story, :owner))
+    |> normalize_assignee_values()
+  end
+
+  defp normalize_assignee_values(values) when is_list(values) do
+    values
+    |> Enum.flat_map(&normalize_assignee_values/1)
+    |> Enum.uniq()
+  end
+
+  defp normalize_assignee_values(value) when is_binary(value) do
+    value
+    |> String.split(";", trim: true)
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.uniq()
+  end
+
+  defp normalize_assignee_values(_value), do: []
+
+  defp assignee_id([]), do: nil
+  defp assignee_id(assignees), do: Enum.join(assignees, ";")
+
+  defp assigned_to_worker?(_assignees, nil), do: true
+
+  defp assigned_to_worker?(assignees, %{match_values: match_values})
+       when is_struct(match_values, MapSet) do
+    Enum.any?(assignees, fn assignee ->
+      assignee
+      |> normalize_assignee_match_value()
+      |> then(&MapSet.member?(match_values, &1))
+    end)
+  end
+
+  defp assigned_to_worker?(_assignees, _assignee_filter), do: false
 
   defp extract_labels(story) do
     case Map.get(story, "labels") || Map.get(story, "label") do

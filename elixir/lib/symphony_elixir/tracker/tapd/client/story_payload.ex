@@ -3,7 +3,7 @@ defmodule SymphonyElixir.Tracker.Tapd.Client.StoryPayload do
 
   alias SymphonyElixir.Tracker
   alias SymphonyElixir.Tracker.Tapd.Client.{Fields, Response, WorkitemTypeScope}
-  alias SymphonyElixir.Tracker.Tapd.{Normalizer, WorkflowConfig}
+  alias SymphonyElixir.Tracker.Tapd.{Normalizer, ProviderOptions, WorkflowConfig}
 
   @spec decode(String.t(), term(), map(), function(), keyword()) ::
           {:ok, [SymphonyElixir.Issue.t()], non_neg_integer(), [String.t()]} | {:error, term()}
@@ -23,6 +23,7 @@ defmodule SymphonyElixir.Tracker.Tapd.Client.StoryPayload do
              validate_workitem_types?
            ) do
       workspace_url = Tracker.project_url(tracker)
+      assignee_filter = ProviderOptions.routing_assignee_filter(tracker)
 
       {:ok,
        Enum.map(filtered_stories, fn story ->
@@ -34,6 +35,7 @@ defmodule SymphonyElixir.Tracker.Tapd.Client.StoryPayload do
              )
 
          Normalizer.normalize_story(story,
+           assignee_filter: assignee_filter,
            workspace_url: workspace_url,
            state_phase_map: Map.get(workflow, :state_phase_map, %{}),
            workflow: workflow

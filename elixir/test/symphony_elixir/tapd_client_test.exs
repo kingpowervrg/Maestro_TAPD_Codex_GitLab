@@ -87,6 +87,56 @@ defmodule SymphonyElixir.TapdClientTest do
     refute_received {:tapd_request, %{url: "https://api.tapd.cn/stories", params: %{"status" => _status}}}
   end
 
+  test "fetch_candidate_issues requests and enforces the configured TAPD assignee" do
+    tracker = tapd_tracker(provider: %{"assignee" => "王权"})
+    test_pid = self()
+
+    assert {:ok, [mine, other]} =
+             Client.fetch_candidate_issues(tracker,
+               include_relations?: false,
+               request_fun: fn request ->
+                 send(test_pid, {:tapd_request, request})
+
+                 {:ok,
+                  %{
+                    status: 200,
+                    body: %{
+                      "status" => 1,
+                      "data" => [
+                        %{
+                          "Story" => %{
+                            "id" => "story-1",
+                            "name" => "Mine",
+                            "status" => "developing",
+                            "owner" => "王权;"
+                          }
+                        },
+                        %{
+                          "Story" => %{
+                            "id" => "story-2",
+                            "name" => "Other",
+                            "status" => "developing",
+                            "owner" => "晓菊;"
+                          }
+                        }
+                      ]
+                    }
+                  }}
+               end
+             )
+
+    assert mine.assigned_to_worker
+    refute other.assigned_to_worker
+
+    assert_received {:tapd_request,
+                     %{
+                       url: "https://api.tapd.cn/stories",
+                       params: %{"owner" => "王权", "status" => "planning|developing"}
+                     }}
+
+    refute_received {:tapd_request, %{url: "https://api.tapd.cn/stories/get_time_relative_stories"}}
+  end
+
   test "fetch issue states can skip relation enrichment for startup cleanup" do
     tracker = tapd_tracker([])
     test_pid = self()
