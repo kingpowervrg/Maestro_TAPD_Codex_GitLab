@@ -777,6 +777,7 @@ Production CI should also require:
 | `TAPD_WORKSPACE_ID` | TAPD templates |
 | `TAPD_COMMENT_AUTHOR` | Optional TAPD comment author override. |
 | `TAPD_WORKITEM_TYPE_ID` | Optional TAPD Story/workitem type filter used by TAPD workflow preparation. |
+| `TAPD_BUG_AI_WORKFLOW_FIELD` | Optional TAPD Bug custom-field API key that enables AI routing for new/reopened Bugs with value `接受/处理`; successful delivery changes it to `AI已解决`. |
 
 ### Repository Inputs
 

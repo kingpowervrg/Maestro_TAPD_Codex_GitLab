@@ -3,10 +3,10 @@ implementation route is `developing`; `review`, `merging`, and terminal states
 are human-owned or stopped states and are deliberately absent from
 `tracker.lifecycle.active_states`.
 
-1. Read the Story through `tracker.issue_snapshot` and read or create exactly
+1. Read the {% if issue.entity_type == "bug" %}Bug{% else %}Story{% endif %} through `tracker.issue_snapshot` and read or create exactly
    one canonical workpad through `tracker.upsert_workpad`. Keep its full body
    mirrored in workspace-root `.symphony-tapd-workpad.md`; never put that file
-   under `repo/` or commit it.
+   under `repo/` or commit it. {% if issue.entity_type == "bug" %}Pass `entity_type: "bug"` whenever creating a workpad or general comment.{% endif %}
 2. Reconcile the workpad plan, acceptance criteria, and validation checklist.
    Record a concrete reproduction or baseline signal before editing code.
 3. Use {% if issue.branch_name %}`origin/{{ issue.branch_name }}` from the
@@ -19,7 +19,7 @@ are human-owned or stopped states and are deliberately absent from
    in that checkout call. Confirm the working branch is neither the development
    base nor final integration branch `{{ repo.base_branch }}` and follows the
    configured work prefix before any commit or push.
-4. The initial clone is blobless and sparse. Before editing, inspect the tree
+4. The initial clone is blobless, sparse, and uses a sparse index. Before editing, inspect the tree
    and expand sparse checkout only for directories required by the Story with
    `git sparse-checkout add <path>`. Fetch Git LFS objects only for explicitly
    required paths. Then work only under `repo/`, implement the scoped change,
@@ -37,9 +37,7 @@ are human-owned or stopped states and are deliberately absent from
    remote repository, branch name, commit SHA, validation results, and
    reviewer-ready `suggested_mr_title` and `suggested_mr_description` text.
    These fields are handoff text only; do not create or update an MR.
-9. Move the Story to the configured `review` raw state through the typed
-   tracker move tool. Stop immediately after the state update succeeds because
-   review is a human wait state and is not active for this template.
+9. {% if issue.entity_type == "bug" %}Only after the code change is validated, committed, pushed, and recorded in the workpad, call `tracker.complete_ai_workflow`. This must change `AI特殊工作流` from `接受/处理` to `AI已解决`. Do not change the Bug's TAPD status. Stop immediately after the field update succeeds.{% else %}Move the Story to the configured `review` raw state through the typed tracker move tool. Stop immediately after the state update succeeds because review is a human wait state and is not active for this template.{% endif %}
 
 Push failure policy:
 

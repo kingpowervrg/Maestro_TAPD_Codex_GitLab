@@ -2,6 +2,7 @@ defmodule SymphonyElixir.Tracker.Tapd.WorkflowConfig do
   @moduledoc false
 
   alias SymphonyElixir.Tracker.Config, as: TrackerConfig
+  alias SymphonyElixir.Tracker.Tapd.BugAIWorkflow
   alias SymphonyElixir.Workflow.Effective
   alias SymphonyElixir.Workflow.ExecutionProfileRegistry
   alias SymphonyElixir.Workflow.Lifecycle, as: WorkflowLifecycle
@@ -180,6 +181,23 @@ defmodule SymphonyElixir.Tracker.Tapd.WorkflowConfig do
       policy_by_route_key: ProfileRegistry.default_policy_by_route_key(profile_module, profile_options)
     }
     |> effective_workflow(profile_context)
+  end
+
+  @spec workflow_for_bug(map()) :: workflow()
+  def workflow_for_bug(tracker) when is_map(tracker) do
+    active_states = BugAIWorkflow.active_states(tracker)
+
+    state_phase_map = Map.new(active_states, &{&1, "in_progress"})
+
+    tracker
+    |> global_workflow("bug")
+    |> Map.merge(%{
+      workitem_type_id: "bug",
+      active_states: active_states,
+      terminal_states: [],
+      state_phase_map: state_phase_map
+    })
+    |> then(&struct!(Effective, Map.from_struct(&1)))
   end
 
   defp normalize_workflows_by_type(

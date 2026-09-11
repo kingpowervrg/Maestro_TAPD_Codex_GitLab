@@ -87,6 +87,114 @@ defmodule SymphonyElixir.TapdClientTest do
     refute_received {:tapd_request, %{url: "https://api.tapd.cn/stories", params: %{"status" => _status}}}
   end
 
+  test "fetch_candidate_issues includes only AI-accepted Bugs in new or reopened states" do
+    tracker =
+      tapd_tracker(
+        provider: %{"assignee" => "王权"},
+        platform: %{
+          "workspace_id" => "53000000",
+          "bug_ai_workflow" => %{
+            "field" => "custom_field_6",
+            "accepted_value" => "接受/处理",
+            "resolved_value" => "AI已解决",
+            "active_states" => ["new", "reopened"]
+          }
+        }
+      )
+
+    test_pid = self()
+
+    assert {:ok, [bug]} =
+             Client.fetch_candidate_issues(tracker,
+               request_fun: fn request ->
+                 send(test_pid, {:tapd_request, request})
+
+                 case request.url do
+                   "https://api.tapd.cn/stories" ->
+                     {:ok, %{status: 200, body: %{"status" => 1, "data" => []}}}
+
+                   "https://api.tapd.cn/bugs" ->
+                     {:ok,
+                      %{
+                        status: 200,
+                        body: %{
+                          "status" => 1,
+                          "data" => [
+                            %{
+                              "Bug" => %{
+                                "id" => "1153000000000000100",
+                                "title" => "AI-routed Bug",
+                                "description" => "Fix the regression",
+                                "status" => "new",
+                                "current_owner" => "王权;",
+                                "custom_field_6" => "接受/处理"
+                              }
+                            }
+                          ]
+                        }
+                      }}
+                 end
+               end
+             )
+
+    assert bug.entity_type == "bug"
+    assert bug.workitem_type_id == "bug"
+    assert bug.state == "new"
+    assert bug.lifecycle_phase == "in_progress"
+    assert bug.assigned_to_worker
+    assert bug.custom_fields["AI特殊工作流"] == "接受/处理"
+
+    assert_received {:tapd_request,
+                     %{
+                       url: "https://api.tapd.cn/bugs",
+                       params: %{
+                         "status" => "new|reopened",
+                         "current_owner" => "王权",
+                         "custom_field_6" => "接受/处理"
+                       }
+                     }}
+  end
+
+  test "fetch_issue_states_by_ids refreshes an AI-resolved Bug as no longer routable" do
+    tracker =
+      tapd_tracker(
+        platform: %{
+          "workspace_id" => "53000000",
+          "bug_ai_workflow" => %{"field" => "custom_field_6"}
+        }
+      )
+
+    assert {:ok, [bug]} =
+             Client.fetch_issue_states_by_ids(["1153000000000000100"], tracker,
+               request_fun: fn
+                 %{url: "https://api.tapd.cn/stories"} ->
+                   {:ok, %{status: 200, body: %{"status" => 1, "data" => []}}}
+
+                 %{url: "https://api.tapd.cn/bugs"} ->
+                   {:ok,
+                    %{
+                      status: 200,
+                      body: %{
+                        "status" => 1,
+                        "data" => [
+                          %{
+                            "Bug" => %{
+                              "id" => "1153000000000000100",
+                              "title" => "Completed Bug",
+                              "status" => "reopened",
+                              "custom_field_6" => "AI已解决"
+                            }
+                          }
+                        ]
+                      }
+                    }}
+               end
+             )
+
+    refute bug.assigned_to_worker
+    assert bug.custom_fields["AI特殊工作流"] == "AI已解决"
+  end
+
   test "fetch_candidate_issues requests and enforces the configured TAPD assignee" do
     tracker = tapd_tracker(provider: %{"assignee" => "王权"})
     test_pid = self()

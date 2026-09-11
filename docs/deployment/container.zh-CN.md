@@ -777,6 +777,7 @@ docker build -f docker/app/Dockerfile \
 | `TAPD_WORKSPACE_ID` | TAPD templates |
 | `TAPD_COMMENT_AUTHOR` | 可选 TAPD 评论作者覆盖。 |
 | `TAPD_WORKITEM_TYPE_ID` | 可选 TAPD Story / workitem 类型过滤，用于 TAPD workflow 准备。 |
+| `TAPD_BUG_AI_WORKFLOW_FIELD` | 可选 TAPD 缺陷自定义字段 API 键；开启后路由状态为“新/重新打开”且字段值为“接受/处理”的缺陷，成功交付后改为“AI已解决”。 |
 
 ### 仓库输入
 

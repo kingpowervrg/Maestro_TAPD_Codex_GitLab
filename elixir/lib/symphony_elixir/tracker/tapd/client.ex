@@ -1,6 +1,6 @@
 defmodule SymphonyElixir.Tracker.Tapd.Client do
   @moduledoc """
-  Restricted TAPD HTTP client for Symphony's supported Stories subset.
+  Restricted TAPD HTTP client for Symphony's supported Stories and AI-routed Bugs subset.
   """
 
   alias SymphonyElixir.Issue
@@ -35,6 +35,18 @@ defmodule SymphonyElixir.Tracker.Tapd.Client do
   @spec fetch_stories_by_ids([String.t()], keyword()) :: {:ok, [Issue.t()]} | {:error, term()}
   def fetch_stories_by_ids(issue_ids, opts \\ []) when is_list(issue_ids) and is_list(opts),
     do: Reader.fetch_stories_by_ids(issue_ids, opts)
+
+  @spec fetch_issues_by_ids([String.t()], keyword()) :: {:ok, [Issue.t()]} | {:error, term()}
+  def fetch_issues_by_ids(issue_ids, opts \\ []) when is_list(issue_ids) and is_list(opts),
+    do: Reader.fetch_issues_by_ids(issue_ids, opts)
+
+  @spec fetch_bugs_by_status([String.t()], keyword()) :: {:ok, [Issue.t()]} | {:error, term()}
+  def fetch_bugs_by_status(state_names, opts \\ []) when is_list(state_names) and is_list(opts),
+    do: Reader.fetch_bugs_by_status(state_names, opts)
+
+  @spec fetch_bugs_by_ids([String.t()], keyword()) :: {:ok, [Issue.t()]} | {:error, term()}
+  def fetch_bugs_by_ids(issue_ids, opts \\ []) when is_list(issue_ids) and is_list(opts),
+    do: Reader.fetch_bugs_by_ids(issue_ids, opts)
 
   @spec create_story_comment(String.t(), String.t(), keyword()) :: :ok | {:error, term()}
   def create_story_comment(story_id, description, opts \\ [])

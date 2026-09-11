@@ -83,6 +83,8 @@ export TAPD_API_USER=...
 export TAPD_API_PASSWORD=...
 export TAPD_WORKSPACE_ID=...
 export TAPD_ASSIGNEE='Your TAPD display name'
+# Optional: enable AI-routed TAPD Bugs in this workspace.
+export TAPD_BUG_AI_WORKFLOW_FIELD=custom_field_6
 ```
 
 `tracker.provider.assignee` limits TAPD dispatch to Stories whose `owner`
@@ -90,6 +92,16 @@ field contains the configured display name. The `tapd/git/codex` launcher
 requires `TAPD_ASSIGNEE` so it cannot accidentally run without an assignee
 filter. Use the TAPD display name without the trailing semicolon returned by
 the API.
+
+When `TAPD_BUG_AI_WORKFLOW_FIELD` is set, TAPD polling also reads Bugs in raw
+states `new` and `reopened`. A Bug is dispatchable only when that custom field
+equals `接受/处理` and its `current_owner` matches `TAPD_ASSIGNEE`. The Git-only
+Codex workflow keeps the Bug status unchanged; after validation, commit, push,
+and workpad handoff succeed, it uses the typed
+`tracker.complete_ai_workflow` capability to set the field to `AI已解决`.
+The next issue refresh then stops the run, so the same Bug is not dispatched
+again. Configure the API field key returned by TAPD's Bug custom-field settings
+endpoint (for example, `custom_field_6`), not the display label.
 
 Linear:
 

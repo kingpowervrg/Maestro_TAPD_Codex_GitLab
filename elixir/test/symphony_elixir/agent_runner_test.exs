@@ -614,6 +614,26 @@ defmodule SymphonyElixir.AgentRunnerTest do
     assert {:continue, ^issue} = Continuation.continue_with_issue(issue, fetcher, [])
   end
 
+  test "issue state refresh stops when a refreshed issue is no longer routed to this worker" do
+    issue = %Issue{
+      id: "tapd-bug-ai-completed",
+      identifier: "TAPD-3",
+      title: "AI-completed Bug",
+      state: "new",
+      entity_type: "bug",
+      assigned_to_worker: false,
+      workflow: %{
+        active_states: ["new", "reopened"],
+        terminal_states: [],
+        state_phase_map: %{"new" => "in_progress", "reopened" => "in_progress"}
+      }
+    }
+
+    fetcher = fn ["tapd-bug-ai-completed"] -> {:ok, [issue]} end
+
+    assert {:done, ^issue} = Continuation.continue_with_issue(issue, fetcher, [])
+  end
+
   test "issue state refresh emits final structured failure after retry exhaustion" do
     issue = %Issue{
       id: "tapd-issue-refresh-failure",

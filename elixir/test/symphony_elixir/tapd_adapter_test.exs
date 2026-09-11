@@ -39,6 +39,7 @@ defmodule SymphonyElixir.TapdAdapterTest do
     assert "tapd_read_story_dependencies" in names
     assert "tapd_save_story_dependency" in names
     assert "tapd_provider_diagnostics" in names
+    assert "tapd_complete_ai_workflow" in names
 
     assert MapSet.subset?(
              MapSet.new([
@@ -52,7 +53,8 @@ defmodule SymphonyElixir.TapdAdapterTest do
                "tracker.add_issue_relation",
                "tracker.read_issue_dependencies",
                "tracker.save_issue_dependency",
-               "tracker.provider_diagnostics"
+               "tracker.provider_diagnostics",
+               "tracker.complete_ai_workflow"
              ]),
              MapSet.new(Adapter.capabilities())
            )
@@ -634,6 +636,25 @@ defmodule SymphonyElixir.TapdAdapterTest do
     assert_validate_error(:missing_tapd_terminal_states)
   end
 
+  test "tapd config validation rejects an invalid Bug AI workflow field key" do
+    write_workflow_file!(Workflow.workflow_file_path(),
+      tracker_kind: "tapd",
+      tracker_endpoint: nil,
+      tracker_api_token: "tapd-user",
+      tracker_api_secret: "tapd-secret",
+      tracker_project_slug: nil,
+      tracker_assignee: nil,
+      tracker_active_states: ["planning"],
+      tracker_terminal_states: ["resolved"],
+      tracker_platform: %{
+        "workspace_id" => "53000000",
+        "bug_ai_workflow" => %{"field" => "AI特殊工作流"}
+      }
+    )
+
+    assert_validate_error(:invalid_tapd_bug_ai_workflow)
+  end
+
   test "tapd_issue_snapshot returns typed story, workflow, comments, and workpad data" do
     write_workflow_file!(Workflow.workflow_file_path(), tapd_typed_tool_workflow_config())
     register_tapd_workpad!("1153000000000000001", "1153000000000000999")
@@ -662,6 +683,122 @@ defmodule SymphonyElixir.TapdAdapterTest do
     assert Enum.any?(get_in(payload, ["issue", "states"]), fn state ->
              state["routeKey"] == "review" and state["name"] == "status_5"
            end)
+  end
+
+  test "tapd_complete_ai_workflow changes an accepted Bug to AI resolved" do
+    write_workflow_file!(
+      Workflow.workflow_file_path(),
+      tapd_typed_tool_workflow_config(
+        tracker_platform: %{
+          "workspace_id" => "53000000",
+          "bug_ai_workflow" => %{
+            "field" => "custom_field_6",
+            "accepted_value" => "接受/处理",
+            "resolved_value" => "AI已解决",
+            "active_states" => ["new", "reopened"]
+          }
+        }
+      )
+    )
+
+    test_pid = self()
+    record_review_ready_evidence(["1153000000000000100", "TAPD-1153000000000000100"])
+
+    response =
+      Bridge.execute(
+        "tapd_complete_ai_workflow",
+        %{"issue_id" => "1153000000000000100"},
+        request_fun: fn request ->
+          send(test_pid, {:tapd_typed_request, request})
+
+          case {request.method, request.url} do
+            {"GET", "https://api.tapd.cn/stories"} ->
+              {:ok, %{status: 200, body: %{"status" => 1, "data" => []}}}
+
+            {"GET", "https://api.tapd.cn/bugs"} ->
+              {:ok,
+               %{
+                 status: 200,
+                 body: %{
+                   "status" => 1,
+                   "data" => [
+                     %{
+                       "Bug" => %{
+                         "id" => "1153000000000000100",
+                         "title" => "Fix combat regression",
+                         "status" => "new",
+                         "custom_field_6" => "接受/处理"
+                       }
+                     }
+                   ]
+                 }
+               }}
+
+            {"POST", "https://api.tapd.cn/bugs"} ->
+              {:ok, %{status: 200, body: %{"status" => 1, "data" => %{"Bug" => %{}}}}}
+          end
+        end
+      )
+
+    assert response["success"] == true, inspect(response)
+    assert get_in(response, ["payload", "issue", "entityType"]) == "bug"
+    assert get_in(response, ["payload", "issue", "customFields", "AI特殊工作流"]) == "AI已解决"
+
+    assert_received {:tapd_typed_request,
+                     %{
+                       method: "POST",
+                       url: "https://api.tapd.cn/bugs",
+                       params: %{
+                         "id" => "1153000000000000100",
+                         "custom_field_6" => "AI已解决",
+                         "workspace_id" => "53000000"
+                       }
+                     }}
+  end
+
+  test "tapd_upsert_workpad creates Bug comments with the Bug entry type" do
+    write_workflow_file!(Workflow.workflow_file_path(), tapd_typed_tool_workflow_config())
+    test_pid = self()
+
+    response =
+      Bridge.execute(
+        "tapd_upsert_workpad",
+        %{
+          "issue_id" => "1153000000000000101",
+          "entity_type" => "bug",
+          "body" => "### Plan\n\n- [ ] fix the Bug"
+        },
+        request_fun: fn request ->
+          send(test_pid, {:tapd_typed_request, request})
+
+          {:ok,
+           %{
+             status: 200,
+             body: %{
+               "status" => 1,
+               "data" => %{
+                 "Comment" => %{
+                   "id" => "1153000000000000998",
+                   "description" => Map.get(request.params, "description")
+                 }
+               }
+             }
+           }}
+        end
+      )
+
+    assert response["success"] == true, inspect(response)
+
+    assert_received {:tapd_typed_request,
+                     %{
+                       method: "POST",
+                       url: "https://api.tapd.cn/comments",
+                       params: %{
+                         "entry_id" => "1153000000000000101",
+                         "entry_type" => "bug",
+                         "workspace_id" => "53000000"
+                       }
+                     }}
   end
 
   test "tapd_move_issue resolves route keys and updates raw TAPD status" do

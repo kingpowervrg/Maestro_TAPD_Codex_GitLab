@@ -23,7 +23,7 @@ defmodule SymphonyElixir.Agent.Continuation do
 
     case fetch_issue_states_with_retry(issue_id, issue_state_fetcher, retry_delays_ms, opts) do
       {:ok, [%Issue{} = refreshed_issue | _]} ->
-        if active_issue_state?(refreshed_issue, refreshed_issue.state) do
+        if refreshed_issue.assigned_to_worker and active_issue_state?(refreshed_issue, refreshed_issue.state) do
           {:continue, refreshed_issue}
         else
           {:done, refreshed_issue}

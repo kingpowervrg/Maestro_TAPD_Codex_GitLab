@@ -18,6 +18,11 @@ tracker:
     platform:
       workspace_id: $TAPD_WORKSPACE_ID
       comment_author: $TAPD_COMMENT_AUTHOR
+      bug_ai_workflow:
+        field: $TAPD_BUG_AI_WORKFLOW_FIELD
+        accepted_value: 接受/处理
+        resolved_value: AI已解决
+        active_states: [new, reopened]
   lifecycle:
     active_states:
       - status_4
@@ -83,6 +88,7 @@ hooks:
     else
       GIT_LFS_SKIP_SMUDGE=1 "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/bin/repo" clone "$SOURCE_REPO_URL" repo --depth 1 --filter blob:none --sparse
     fi
+    git -C repo sparse-checkout reapply --sparse-index
   before_run: |
     task_base_branch="${SYMPHONY_ISSUE_BRANCH_NAME:-${SOURCE_REPO_BASE_BRANCH:-}}"
     if [ -n "$task_base_branch" ] && [ -d repo/.git ]; then
@@ -104,7 +110,7 @@ agent_provider:
       type: dangerFullAccess
 ---
 
-You are working on a TAPD story `{{ issue.identifier }}` in a Git-only delivery workflow.
+You are working on a TAPD {% if issue.entity_type == "bug" %}Bug{% else %}story{% endif %} `{{ issue.identifier }}` in a Git-only delivery workflow.
 
 <!-- symphony-include: _partials/runtime/retry_continuation_context.md -->
 
@@ -112,7 +118,10 @@ Story context:
 Identifier: {{ issue.identifier }}
 Title: {{ issue.title }}
 Current status: {{ issue.state }}
+Entity type: {% if issue.entity_type %}{{ issue.entity_type }}{% else %}story{% endif %}
 Workitem type: {% if issue.workitem_type_id %}{{ issue.workitem_type_id }}{% else %}unknown{% endif %}
+{% if issue.entity_type == "bug" %}AI特殊工作流: {{ issue.custom_fields.ai_special_workflow }}
+{% endif %}
 Labels: {{ issue.labels }}
 URL: {{ issue.url }}
 
@@ -121,7 +130,7 @@ Current workflow contract:
 - current route: {% if workflow.route.key %}`{{ workflow.route.key }}`{% else %}`unresolved`{% endif %}; action `{{ workflow.route.action }}`; gate `{{ workflow.gate.status }}/{{ workflow.gate.gate }}`
 - gate reason: {{ workflow.gate.reason }}
 - review handoff raw state: `{{ issue.workflow.raw_state_by_route_key.review }}`
-- Story development base: {% if issue.branch_name %}`{{ issue.branch_name }}` (from the TAPD `代码分支` field){% else %}`{{ repo.base_branch }}` (default because the Story has no `代码分支` field){% endif %}
+- {% if issue.entity_type == "bug" %}Bug{% else %}Story{% endif %} development base: {% if issue.branch_name %}`{{ issue.branch_name }}` (from the TAPD `代码分支` field){% else %}`{{ repo.base_branch }}` (default because the work item has no `代码分支` field){% endif %}
 - final integration branch: `{{ repo.base_branch }}` (human-owned after acceptance)
 
 Description:
@@ -136,9 +145,9 @@ Instructions:
 1. This is an unattended session. Follow the resolved route policy and stop for
    a true blocker instead of asking for interactive setup.
 2. The automation boundary ends after a working-branch push, remote SHA
-   verification, TAPD workpad handoff, and transition to human review.
-   Base the working branch on the Story development base above. Treat that
-   explicit Story branch as authoritative for implementation; it is not a
+   verification, TAPD workpad handoff, and {% if issue.entity_type == "bug" %}changing `AI特殊工作流` to `AI已解决`{% else %}transition to human review{% endif %}.
+   Base the working branch on the work item development base above. Treat that
+   explicit work item branch as authoritative for implementation; it is not a
    conflict with the final integration branch.
 3. The repository hosting service is only a Git SSH remote. Do not invoke any
    hosting-platform API or create, update, review, approve, check, land, close,

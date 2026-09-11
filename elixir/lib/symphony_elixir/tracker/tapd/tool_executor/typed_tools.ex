@@ -6,7 +6,7 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
   alias SymphonyElixir.Tracker
   alias SymphonyElixir.Tracker.Capabilities, as: TrackerCapabilities
   alias SymphonyElixir.Tracker.Kinds
-  alias SymphonyElixir.Tracker.Tapd.Client
+  alias SymphonyElixir.Tracker.Tapd.{BugAIWorkflow, Client}
   alias SymphonyElixir.Tracker.Tapd.Client.Paths
   alias SymphonyElixir.Tracker.Tapd.Client.Response
   alias SymphonyElixir.Tracker.WorkpadRegistry
@@ -33,6 +33,7 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
   @read_story_dependencies_tool "tapd_read_story_dependencies"
   @save_story_dependency_tool "tapd_save_story_dependency"
   @provider_diagnostics_tool "tapd_provider_diagnostics"
+  @complete_ai_workflow_tool "tapd_complete_ai_workflow"
 
   @issue_snapshot_capability TrackerCapabilities.issue_snapshot()
   @move_issue_capability TrackerCapabilities.move_issue()
@@ -45,6 +46,7 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
   @read_issue_dependencies_capability TrackerCapabilities.read_issue_dependencies()
   @save_issue_dependency_capability TrackerCapabilities.save_issue_dependency()
   @provider_diagnostics_capability TrackerCapabilities.provider_diagnostics()
+  @complete_ai_workflow_capability TrackerCapabilities.complete_ai_workflow()
 
   @default_comment_limit 50
   @spec tool_specs() :: [map()]
@@ -95,6 +97,7 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
           "required" => ["issue_id", "body"],
           "properties" => %{
             "issue_id" => %{"type" => "string", "description" => "Full TAPD Story id or TAPD-<id> identifier."},
+            "entity_type" => %{"type" => ["string", "null"], "enum" => ["story", "bug", nil], "description" => "TAPD entity type. Use bug for a Bug workpad; defaults to story."},
             "body" => %{"type" => "string", "description" => "Workpad body to write. The executor does not inspect headings, sections, or checkbox text."},
             "workpad_id" => %{"type" => ["string", "null"], "description" => "Existing workpad id to update. This is the stable tracker-level workpad identity."},
             "mode" => %{"type" => ["string", "null"], "description" => "Upsert mode. The current contract supports replace."}
@@ -132,6 +135,7 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
           "required" => ["body"],
           "properties" => %{
             "issue_id" => %{"type" => ["string", "null"], "description" => "Full TAPD Story id or TAPD-<id> identifier. Required when comment_id is omitted."},
+            "entity_type" => %{"type" => ["string", "null"], "enum" => ["story", "bug", nil], "description" => "TAPD entity type for a newly created comment; defaults to story."},
             "comment_id" => %{"type" => ["string", "null"], "description" => "Existing TAPD comment id to update."},
             "body" => %{"type" => "string", "description" => "Complete Markdown comment body to create or replace."}
           }
@@ -228,6 +232,20 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
           "additionalProperties" => false,
           "properties" => %{}
         }
+      ),
+      tool_spec(
+        @complete_ai_workflow_tool,
+        @complete_ai_workflow_capability,
+        "After a successful code change and push, mark the configured TAPD Bug AI special workflow field as resolved. The tool verifies that the Bug is still in an active AI state and currently accepted for processing.",
+        "write",
+        %{
+          "type" => "object",
+          "additionalProperties" => false,
+          "required" => ["issue_id"],
+          "properties" => %{
+            "issue_id" => %{"type" => "string", "description" => "Full TAPD Bug id or TAPD-<id> identifier."}
+          }
+        }
       )
     ]
   end
@@ -252,6 +270,7 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
   def execute(tracker, @read_story_dependencies_tool, arguments, opts), do: read_story_dependencies(tracker, arguments, opts)
   def execute(tracker, @save_story_dependency_tool, arguments, opts), do: save_story_dependency(tracker, arguments, opts)
   def execute(tracker, @provider_diagnostics_tool, arguments, opts), do: provider_diagnostics(tracker, arguments, opts)
+  def execute(tracker, @complete_ai_workflow_tool, arguments, opts), do: complete_ai_workflow(tracker, arguments, opts)
   def execute(_tracker, _tool, _arguments, _opts), do: {:error, :unsupported_typed_tapd_tool}
 
   defp tool_spec(name, capability, description, side_effect, input_schema) do
@@ -270,7 +289,7 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
   defp issue_snapshot(tracker, arguments, opts) do
     with {:ok, args} <- issue_snapshot_args(arguments),
          {:ok, issue} <- fetch_issue(tracker, args.issue_id, opts),
-         {:ok, comments} <- maybe_fetch_comments(tracker, args, opts) do
+         {:ok, comments} <- maybe_fetch_comments(tracker, issue, args, opts) do
       {:success,
        success_payload(%{
          "issue" => snapshot_issue(issue, comments),
@@ -309,7 +328,7 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
   defp attach_external_reference(tracker, arguments, opts) do
     with {:ok, args} <- attach_external_reference_args(arguments),
          :ok <- validate_url(args.url),
-         {:ok, comments} <- fetch_comments(tracker, args.issue_id, args.comment_limit, opts),
+         {:ok, comments} <- fetch_story_comments(tracker, args.issue_id, args.comment_limit, opts),
          {:ok, comment} <- upsert_external_reference_link(tracker, comments, args, opts) do
       attachment = %{
         "id" => "tapd-workpad:" <> Map.fetch!(comment, "id"),
@@ -440,36 +459,118 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
     end
   end
 
+  defp complete_ai_workflow(tracker, arguments, opts) do
+    with {:ok, issue_id} <- required_issue_id_args(arguments),
+         {:ok, field} <- configured_bug_ai_field(tracker),
+         {:ok, issue} <- fetch_issue(tracker, issue_id, opts),
+         :ok <- validate_ai_workflow_completion(issue, tracker),
+         :ok <- validate_ai_workflow_completion_readiness(issue, issue_id, opts),
+         {:ok, completed_issue} <- maybe_commit_ai_workflow_completion(tracker, issue, field, opts) do
+      {:success, success_payload(%{"issue" => completed_issue})}
+    else
+      {:error, reason} -> typed_failure(reason)
+    end
+  end
+
+  defp configured_bug_ai_field(tracker) do
+    case BugAIWorkflow.field(tracker) do
+      field when is_binary(field) -> {:ok, field}
+      _field -> {:error, {:invalid_configuration, "TAPD Bug AI workflow is not configured."}}
+    end
+  end
+
+  defp validate_ai_workflow_completion(%Issue{entity_type: "bug"} = issue, tracker) do
+    current_value = Map.get(issue.custom_fields, "ai_special_workflow")
+    active_states = Enum.map(BugAIWorkflow.active_states(tracker), &String.downcase/1)
+    current_state = issue.state |> to_string() |> String.trim() |> String.downcase()
+
+    cond do
+      current_state not in active_states ->
+        {:error, {:state_conflict, "TAPD Bug is no longer in an AI-active state."}}
+
+      current_value in [BugAIWorkflow.accepted_value(tracker), BugAIWorkflow.resolved_value(tracker)] ->
+        :ok
+
+      true ->
+        {:error, {:state_conflict, "TAPD Bug is not accepted for AI processing."}}
+    end
+  end
+
+  defp validate_ai_workflow_completion(%Issue{}, _tracker) do
+    {:error, {:invalid_arguments, "AI workflow completion is supported only for TAPD Bugs."}}
+  end
+
+  defp validate_ai_workflow_completion_readiness(%Issue{} = issue, issue_id, opts) do
+    args = %{state_name: "review", issue_id: normalize_issue_id(issue_id)}
+
+    if StateTransitionReadiness.governed_target?(issue.workflow, args.state_name) do
+      StateTransitionReadiness.validate(issue.workflow, issue, transition_readiness_opts(args, opts))
+    else
+      :ok
+    end
+  end
+
+  defp maybe_commit_ai_workflow_completion(tracker, %Issue{} = issue, field, opts) do
+    resolved_value = BugAIWorkflow.resolved_value(tracker)
+
+    if Map.get(issue.custom_fields, "ai_special_workflow") == resolved_value do
+      {:ok, completed_ai_workflow_issue(issue, resolved_value)}
+    else
+      with {:ok, response} <- request(tracker, "POST", Paths.bugs(), %{"id" => issue.id, field => resolved_value}, opts),
+           {:ok, _data} <- Response.decode_success_envelope(Paths.bugs(), response) do
+        {:ok, completed_ai_workflow_issue(issue, resolved_value)}
+      end
+    end
+  end
+
+  defp completed_ai_workflow_issue(%Issue{} = issue, resolved_value) do
+    %{
+      "id" => issue.id,
+      "identifier" => issue.identifier,
+      "entityType" => "bug",
+      "state" => state_payload(issue.state, issue.lifecycle_phase),
+      "customFields" => %{"AI特殊工作流" => resolved_value, "aiSpecialWorkflow" => resolved_value}
+    }
+  end
+
   defp fetch_issue(tracker, issue_id, opts) do
     request_fun = Keyword.get(opts, :request_fun, &Client.Request.default_request/1)
     normalized_id = normalize_issue_id(issue_id)
 
-    case Client.fetch_stories_by_ids([normalized_id], tracker: tracker, request_fun: request_fun) do
+    case Client.fetch_issues_by_ids([normalized_id], tracker: tracker, request_fun: request_fun) do
       {:ok, [%Issue{} = issue | _rest]} ->
         {:ok, issue}
 
       {:ok, []} ->
-        {:error, {:not_found, "TAPD Story #{normalized_id} was not found."}}
+        {:error, {:not_found, "TAPD issue #{normalized_id} was not found."}}
 
       {:error, reason} ->
         {:error, reason}
     end
   end
 
-  defp maybe_fetch_comments(_tracker, %{include_comments: false}, _opts), do: {:ok, []}
+  defp maybe_fetch_comments(_tracker, _issue, %{include_comments: false}, _opts), do: {:ok, []}
 
-  defp maybe_fetch_comments(tracker, args, opts) do
-    fetch_comments(tracker, args.issue_id, args.comment_limit, opts)
+  defp maybe_fetch_comments(tracker, issue, args, opts) do
+    fetch_comments(tracker, issue, args.comment_limit, opts)
   end
 
-  defp fetch_comments(tracker, issue_id, limit, opts) do
+  defp fetch_comments(tracker, %Issue{} = issue, limit, opts) do
+    fetch_comments(tracker, issue.id, comment_read_entry_type(issue.entity_type), limit, opts)
+  end
+
+  defp fetch_story_comments(tracker, issue_id, limit, opts) do
+    fetch_comments(tracker, issue_id, "stories", limit, opts)
+  end
+
+  defp fetch_comments(tracker, issue_id, entry_type, limit, opts) do
     with {:ok, body} <-
            request(
              tracker,
              "GET",
              Paths.comments(),
              %{
-               "entry_type" => "stories",
+               "entry_type" => entry_type,
                "entry_id" => normalize_issue_id(issue_id),
                "order" => "created asc",
                "limit" => limit
@@ -531,7 +632,7 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
         end
 
       _record ->
-        with {:ok, comment} <- create_comment(tracker, args.issue_id, args.body, opts) do
+        with {:ok, comment} <- create_comment(tracker, args.issue_id, args.body, args.entity_type, opts) do
           {:ok, register_workpad_comment(args, comment)}
         end
     end
@@ -539,7 +640,7 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
 
   defp maybe_recover_missing_workpad_comment(tracker, args, opts, reason) do
     if missing_tapd_comment?(reason) and is_binary(args.issue_id) do
-      with {:ok, comment} <- create_comment(tracker, args.issue_id, args.body, opts) do
+      with {:ok, comment} <- create_comment(tracker, args.issue_id, args.body, args.entity_type, opts) do
         {:ok, register_workpad_comment(args, comment)}
       end
     else
@@ -559,7 +660,7 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
       _workpad ->
         body = external_reference_section(args)
 
-        with {:ok, comment} <- create_comment(tracker, args.issue_id, body, opts) do
+        with {:ok, comment} <- create_comment(tracker, args.issue_id, body, "story", opts) do
           {:ok, register_workpad_comment(args, comment)}
         end
     end
@@ -569,19 +670,24 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
     update_comment(tracker, comment_id, body, opts)
   end
 
-  defp upsert_general_comment(tracker, %{issue_id: issue_id, body: body}, opts) when is_binary(issue_id) do
-    create_comment(tracker, issue_id, body, opts)
+  defp upsert_general_comment(tracker, %{issue_id: issue_id, body: body, entity_type: entity_type}, opts)
+       when is_binary(issue_id) do
+    create_comment(tracker, issue_id, body, entity_type, opts)
   end
 
   defp upsert_general_comment(_tracker, _args, _opts),
     do: {:error, {:invalid_arguments, "Either comment_id or issue_id is required."}}
 
-  defp create_comment(tracker, issue_id, body, opts) do
+  defp create_comment(tracker, issue_id, body, entity_type, opts) do
     with {:ok, response} <-
            Client.request(
              "POST",
              Paths.comments(),
-             %{"entry_type" => "stories", "entry_id" => normalize_issue_id(issue_id), "description" => body},
+             %{
+               "entry_type" => comment_entry_type(entity_type),
+               "entry_id" => normalize_issue_id(issue_id),
+               "description" => body
+             },
              tracker: tracker,
              request_fun: Keyword.get(opts, :request_fun, &Client.Request.default_request/1)
            ),
@@ -668,11 +774,13 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
   defp upsert_workpad_args(arguments) when is_map(arguments) do
     with {:ok, issue_id} <- required_string(arguments, "issue_id"),
          {:ok, body} <- required_string(arguments, "body"),
-         {:ok, workpad_id} <- optional_nullable_string(arguments, "workpad_id") do
+         {:ok, workpad_id} <- optional_nullable_string(arguments, "workpad_id"),
+         {:ok, entity_type} <- optional_entity_type(arguments) do
       {:ok,
        %{
          issue_id: issue_id,
          body: body,
+         entity_type: entity_type,
          workpad_id: workpad_id,
          mode: nullable_string(arguments, "mode") || "replace"
        }}
@@ -705,8 +813,9 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
   defp upsert_comment_args(arguments) when is_map(arguments) do
     with {:ok, body} <- required_string(arguments, "body"),
          {:ok, issue_id} <- optional_nullable_string(arguments, "issue_id"),
-         {:ok, comment_id} <- optional_nullable_string(arguments, "comment_id") do
-      {:ok, %{issue_id: issue_id, comment_id: comment_id, body: body}}
+         {:ok, comment_id} <- optional_nullable_string(arguments, "comment_id"),
+         {:ok, entity_type} <- optional_entity_type(arguments) do
+      {:ok, %{issue_id: issue_id, comment_id: comment_id, body: body, entity_type: entity_type}}
     end
   end
 
@@ -777,6 +886,13 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
   defp validate_empty_args(arguments) when is_map(arguments) and map_size(arguments) == 0, do: :ok
   defp validate_empty_args(_arguments), do: {:error, {:invalid_arguments, "Expected an empty object."}}
 
+  defp optional_entity_type(arguments) do
+    case nullable_string(arguments, "entity_type") || "story" do
+      entity_type when entity_type in ["story", "bug"] -> {:ok, entity_type}
+      entity_type -> {:error, {:invalid_arguments, "Unsupported TAPD entity_type #{inspect(entity_type)}."}}
+    end
+  end
+
   defp snapshot_issue(%Issue{} = issue, comments) do
     workflow = workflow_map(issue.workflow)
 
@@ -792,6 +908,8 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
       "comments" => comments,
       "branchName" => issue.branch_name,
       "workitemTypeId" => issue.workitem_type_id,
+      "entityType" => issue.entity_type || "story",
+      "customFields" => string_key_map(issue.custom_fields),
       "blockedBy" => Enum.map(issue.blocked_by, &string_key_map/1),
       "workflow" => workflow,
       "states" => workflow_states(workflow)
@@ -1331,6 +1449,12 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
       normalized -> normalized
     end
   end
+
+  defp comment_entry_type("bug"), do: "bug"
+  defp comment_entry_type(_entity_type), do: "stories"
+
+  defp comment_read_entry_type("bug"), do: "bug|bug_remark"
+  defp comment_read_entry_type(entity_type), do: comment_entry_type(entity_type)
 
   defp success_payload(payload) when is_map(payload), do: payload
 

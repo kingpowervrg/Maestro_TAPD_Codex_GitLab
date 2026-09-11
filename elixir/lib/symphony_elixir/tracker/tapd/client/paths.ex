@@ -4,6 +4,7 @@ defmodule SymphonyElixir.Tracker.Tapd.Client.Paths do
   """
 
   @comments "/comments"
+  @bugs "/bugs"
   @stories "/stories"
   @quickstart_testauth "/quickstart/testauth"
   @story_link_relations "/stories/get_link_stories"
@@ -14,6 +15,9 @@ defmodule SymphonyElixir.Tracker.Tapd.Client.Paths do
 
   @spec comments() :: String.t()
   def comments, do: @comments
+
+  @spec bugs() :: String.t()
+  def bugs, do: @bugs
 
   @spec stories() :: String.t()
   def stories, do: @stories

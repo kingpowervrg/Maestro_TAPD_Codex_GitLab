@@ -8,7 +8,8 @@ For TAPD tracker actions, follow the bundled workspace skill at
 `${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/skills/tracker/tapd/SKILL.md`. This
 workflow defines when tracker actions are allowed; the skill defines typed TAPD
 capability semantics and argument shapes. Use only inventory-listed typed
-tracker tools for routine Story reads, workpad updates, and state transitions.
+tracker tools for routine Story/Bug reads, workpad updates, state transitions,
+and AI workflow completion.
 Use inventory-listed typed tracker tools for routine actions.
 Only use inventory-listed typed TAPD tools for tracker access.
 Do not switch to direct TAPD REST calls or token-bearing shell commands.

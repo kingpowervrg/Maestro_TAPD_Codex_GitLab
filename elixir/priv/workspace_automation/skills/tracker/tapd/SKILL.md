@@ -12,7 +12,7 @@ The inventory is authoritative for exact runtime tool names available in the
 current session.
 
 This skill owns TAPD tracker semantics: which typed capability to use, the
-stable TAPD workpad identity, and the argument shape for routine Story actions.
+stable TAPD workpad identity, and the argument shape for routine Story and Bug actions.
 Workflow templates own when those actions are allowed, route-policy handling,
 repo-provider behavior, and completion bars.
 
@@ -49,6 +49,9 @@ generated inventory for the matching semantic capability:
   Story ids.
 - `tracker.provider_diagnostics`: run fixed read-only TAPD provider diagnostics
   when explicitly exposed for operator or troubleshooting workflows.
+- `tracker.complete_ai_workflow`: after a validated code change is committed,
+  pushed, and recorded in the workpad, change an accepted TAPD Bug's configured
+  `AI特殊工作流` field to `AI已解决`. Never call it before successful delivery.
 
 If the inventory does not list the required typed capability, treat that as a
 workflow blocker unless the prompt explicitly supplies a different typed tool.
@@ -95,6 +98,17 @@ Upsert the workflow workpad:
 
 When `workpad_id` is omitted, the upsert tool creates and registers the
 canonical workpad for the Story.
+
+For a TAPD Bug, include `"entity_type": "bug"` when creating the workpad or a
+general comment.
+
+Complete an accepted Bug after successful delivery:
+
+```json
+{
+  "issue_id": "{{ issue.id }}"
+}
+```
 
 Create a general comment:
 

@@ -3,8 +3,8 @@ defmodule SymphonyElixir.Tracker.Tapd.Client.Reader do
 
   alias SymphonyElixir.Issue
   alias SymphonyElixir.Tracker.Config, as: TrackerConfig
-  alias SymphonyElixir.Tracker.Tapd.Client.{Errors, Fields, Paths, Request, StoryPayload, StoryRelations, WorkitemTypeScope}
-  alias SymphonyElixir.Tracker.Tapd.{ProviderOptions, WorkflowConfig}
+  alias SymphonyElixir.Tracker.Tapd.{BugAIWorkflow, ProviderOptions, WorkflowConfig}
+  alias SymphonyElixir.Tracker.Tapd.Client.{BugPayload, Errors, Fields, Paths, Request, StoryPayload, StoryRelations, WorkitemTypeScope}
 
   @page_limit 100
   @request_timeout_ms 30_000
@@ -15,37 +15,55 @@ defmodule SymphonyElixir.Tracker.Tapd.Client.Reader do
     request_fun = Keyword.get(opts, :request_fun, &Request.default_request/1)
     reader_opts = opts |> Keyword.put(:tracker, tracker) |> Keyword.put(:request_fun, request_fun)
 
-    case candidate_issue_ids(tracker) do
-      issue_ids when is_list(issue_ids) and issue_ids != [] ->
-        fetch_stories_by_ids(issue_ids, reader_opts)
-        |> Errors.map_result(:fetch_candidate_issues)
+    result =
+      case candidate_issue_ids(tracker) do
+        issue_ids when is_list(issue_ids) and issue_ids != [] ->
+          fetch_issues_by_ids(issue_ids, reader_opts)
 
-      _issue_ids ->
-        case TrackerConfig.active_states(tracker) do
-          state_names when is_list(state_names) ->
-            fetch_stories_by_status(state_names, reader_opts)
-            |> Errors.map_result(:fetch_candidate_issues)
+        _issue_ids ->
+          with state_names when is_list(state_names) <- TrackerConfig.active_states(tracker),
+               {:ok, stories} <- fetch_stories_by_status(state_names, reader_opts),
+               {:ok, bugs} <- maybe_fetch_candidate_bugs(tracker, reader_opts) do
+            {:ok, stories ++ bugs}
+          else
+            nil -> {:error, :missing_tapd_active_states}
+            error -> error
+          end
+      end
 
-          _other ->
-            {:error, Errors.normalize(:fetch_candidate_issues, :missing_tapd_active_states)}
-        end
-    end
+    Errors.map_result(result, :fetch_candidate_issues)
   end
 
   @spec fetch_issues_by_states([String.t()], map(), keyword()) :: {:ok, [Issue.t()]} | {:error, term()}
   def fetch_issues_by_states(state_names, tracker, opts \\ [])
       when is_list(state_names) and is_map(tracker) and is_list(opts) do
-    fetch_stories_by_status(state_names, Keyword.put(opts, :tracker, tracker))
+    reader_opts = Keyword.put(opts, :tracker, tracker)
+
+    with {:ok, stories} <- fetch_stories_by_status(state_names, reader_opts),
+         {:ok, bugs} <- maybe_fetch_bugs_by_requested_states(state_names, tracker, reader_opts) do
+      {:ok, stories ++ bugs}
+    end
     |> Errors.map_result(:fetch_issues_by_states)
   end
 
   @spec fetch_issue_states_by_ids([String.t()], map(), keyword()) :: {:ok, [Issue.t()]} | {:error, term()}
   def fetch_issue_states_by_ids(issue_ids, tracker, opts \\ [])
       when is_list(issue_ids) and is_map(tracker) and is_list(opts) do
-    opts = Keyword.put(opts, :tracker, tracker)
-
-    fetch_stories_by_ids(issue_ids, opts)
+    issue_ids
+    |> fetch_issues_by_ids(Keyword.put(opts, :tracker, tracker))
     |> Errors.map_result(:fetch_issue_states_by_ids)
+  end
+
+  @spec fetch_issues_by_ids([String.t()], keyword()) :: {:ok, [Issue.t()]} | {:error, term()}
+  def fetch_issues_by_ids(issue_ids, opts \\ []) when is_list(issue_ids) and is_list(opts) do
+    tracker = Keyword.fetch!(opts, :tracker)
+    normalized_ids = normalize_issue_ids(issue_ids)
+
+    with {:ok, stories} <- do_fetch_stories_by_ids(normalized_ids, tracker, Keyword.get(opts, :request_fun, &Request.default_request/1)),
+         missing_ids <- missing_issue_ids(normalized_ids, stories),
+         {:ok, bugs} <- maybe_fetch_bugs_by_ids(missing_ids, tracker, opts) do
+      {:ok, order_issues_by_ids(stories ++ bugs, normalized_ids)}
+    end
   end
 
   @spec fetch_stories_by_status([String.t()], keyword()) :: {:ok, [Issue.t()]} | {:error, term()}
@@ -102,6 +120,35 @@ defmodule SymphonyElixir.Tracker.Tapd.Client.Reader do
     Errors.map_result(result, operation)
   end
 
+  @spec fetch_bugs_by_status([String.t()], keyword()) :: {:ok, [Issue.t()]} | {:error, term()}
+  def fetch_bugs_by_status(state_names, opts \\ []) when is_list(state_names) and is_list(opts) do
+    tracker = Keyword.fetch!(opts, :tracker)
+    request_fun = Keyword.get(opts, :request_fun, &Request.default_request/1)
+
+    statuses = state_names |> Enum.map(&Fields.normalize_string/1) |> Enum.reject(&is_nil/1)
+
+    case statuses do
+      [] -> {:ok, []}
+      _statuses -> do_fetch_bugs_by_status(tracker, Enum.join(statuses, "|"), 1, [], request_fun)
+    end
+  end
+
+  @spec fetch_bugs_by_ids([String.t()], keyword()) :: {:ok, [Issue.t()]} | {:error, term()}
+  def fetch_bugs_by_ids(issue_ids, opts \\ []) when is_list(issue_ids) and is_list(opts) do
+    tracker = Keyword.fetch!(opts, :tracker)
+    request_fun = Keyword.get(opts, :request_fun, &Request.default_request/1)
+
+    issue_ids
+    |> normalize_issue_ids()
+    |> Task.async_stream(
+      &fetch_bug_by_id(&1, tracker, request_fun),
+      max_concurrency: @id_fetch_max_concurrency,
+      ordered: true,
+      timeout: @request_timeout_ms + 1_000
+    )
+    |> reduce_issue_fetch_results()
+  end
+
   @spec fetch_story_by_id(String.t(), map(), function()) :: {:ok, [Issue.t()]} | {:error, term()}
   defp fetch_story_by_id(issue_id, tracker, request_fun) do
     case Request.request("GET", Paths.stories(), %{"id" => issue_id},
@@ -111,6 +158,19 @@ defmodule SymphonyElixir.Tracker.Tapd.Client.Reader do
       {:ok, body} ->
         case StoryPayload.decode(Paths.stories(), body, tracker, request_fun, validate_workitem_types?: false) do
           {:ok, issues, _raw_count, _observed_workitem_type_ids} -> {:ok, issues}
+          {:error, reason} -> {:error, reason}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp fetch_bug_by_id(issue_id, tracker, request_fun) do
+    case Request.request("GET", Paths.bugs(), %{"id" => issue_id}, tracker: tracker, request_fun: request_fun) do
+      {:ok, body} ->
+        case BugPayload.decode(Paths.bugs(), body, tracker) do
+          {:ok, issues, _raw_count} -> {:ok, issues}
           {:error, reason} -> {:error, reason}
         end
 
@@ -178,7 +238,11 @@ defmodule SymphonyElixir.Tracker.Tapd.Client.Reader do
       ordered: true,
       timeout: @request_timeout_ms + 1_000
     )
-    |> Enum.reduce_while({:ok, []}, fn
+    |> reduce_issue_fetch_results()
+  end
+
+  defp reduce_issue_fetch_results(results) do
+    Enum.reduce_while(results, {:ok, []}, fn
       {:ok, {:ok, issues}}, {:ok, acc} ->
         {:cont, {:ok, acc ++ issues}}
 
@@ -188,6 +252,77 @@ defmodule SymphonyElixir.Tracker.Tapd.Client.Reader do
       {:exit, reason}, _acc ->
         {:halt, {:error, {:tapd_request, reason}}}
     end)
+  end
+
+  defp do_fetch_bugs_by_status(tracker, status_filter, page, acc, request_fun) do
+    params =
+      %{"status" => status_filter, "page" => page, "limit" => @page_limit}
+      |> maybe_put_bug_assignee(ProviderOptions.assignee(tracker))
+      |> maybe_put_ai_workflow_filter(tracker)
+
+    with {:ok, body} <- Request.request("GET", Paths.bugs(), params, tracker: tracker, request_fun: request_fun),
+         {:ok, issues, raw_count} <- BugPayload.decode(Paths.bugs(), body, tracker) do
+      updated_acc = acc ++ issues
+
+      if raw_count < @page_limit do
+        {:ok, updated_acc}
+      else
+        do_fetch_bugs_by_status(tracker, status_filter, page + 1, updated_acc, request_fun)
+      end
+    end
+  end
+
+  defp maybe_fetch_candidate_bugs(tracker, opts) do
+    if BugAIWorkflow.enabled?(tracker) do
+      fetch_bugs_by_status(BugAIWorkflow.active_states(tracker), opts)
+    else
+      {:ok, []}
+    end
+  end
+
+  defp maybe_fetch_bugs_by_requested_states(state_names, tracker, opts) do
+    bug_states = BugAIWorkflow.active_states(tracker)
+    requested_bug_states = Enum.filter(state_names, &(&1 in bug_states))
+
+    if BugAIWorkflow.enabled?(tracker) and requested_bug_states != [] do
+      fetch_bugs_by_status(requested_bug_states, opts)
+    else
+      {:ok, []}
+    end
+  end
+
+  defp maybe_fetch_bugs_by_ids([], _tracker, _opts), do: {:ok, []}
+
+  defp maybe_fetch_bugs_by_ids(issue_ids, tracker, opts) do
+    if BugAIWorkflow.enabled?(tracker) do
+      fetch_bugs_by_ids(issue_ids, opts)
+    else
+      {:ok, []}
+    end
+  end
+
+  defp maybe_put_bug_assignee(params, nil), do: params
+  defp maybe_put_bug_assignee(params, assignee), do: Map.put(params, "current_owner", assignee)
+
+  defp maybe_put_ai_workflow_filter(params, tracker) do
+    Map.put(params, BugAIWorkflow.field(tracker), BugAIWorkflow.accepted_value(tracker))
+  end
+
+  defp normalize_issue_ids(issue_ids) do
+    issue_ids
+    |> Enum.map(&normalize_issue_id/1)
+    |> Enum.reject(&is_nil/1)
+    |> Enum.uniq()
+  end
+
+  defp missing_issue_ids(issue_ids, issues) do
+    found_ids = MapSet.new(issues, & &1.id)
+    Enum.reject(issue_ids, &MapSet.member?(found_ids, &1))
+  end
+
+  defp order_issues_by_ids(issues, issue_ids) do
+    issues_by_id = Map.new(issues, &{&1.id, &1})
+    Enum.flat_map(issue_ids, fn issue_id -> List.wrap(Map.get(issues_by_id, issue_id)) end)
   end
 
   defp maybe_put_workitem_type_id(params, workitem_type_id) do

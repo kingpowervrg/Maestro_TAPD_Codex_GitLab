@@ -817,6 +817,14 @@ defmodule SymphonyElixir.WorkflowTemplatesTest do
 
     assert settings.repo.provider.kind == RepoProviderKinds.git()
     assert get_in(config, ["tracker", "provider", "assignee"]) == "$TAPD_ASSIGNEE"
+
+    assert get_in(config, ["tracker", "provider", "platform", "bug_ai_workflow"]) == %{
+             "field" => "$TAPD_BUG_AI_WORKFLOW_FIELD",
+             "accepted_value" => "接受/处理",
+             "resolved_value" => "AI已解决",
+             "active_states" => ["new", "reopened"]
+           }
+
     assert settings.tracker.lifecycle["active_states"] == ["status_4", "developing"]
     assert settings.tracker.lifecycle["terminal_states"] == ["status_6", "status_8"]
 
@@ -845,10 +853,13 @@ defmodule SymphonyElixir.WorkflowTemplatesTest do
     end)
 
     assert :ok == SymphonyElixir.RepoProvider.validate_config(settings.repo)
+    assert prompt =~ "tracker.complete_ai_workflow"
+    assert prompt =~ "AI特殊工作流"
 
     after_create = get_in(config, ["hooks", "after_create"])
     assert after_create =~ "GIT_LFS_SKIP_SMUDGE=1"
     assert after_create =~ "--depth 1 --filter blob:none --sparse"
+    assert after_create =~ "git -C repo sparse-checkout reapply --sparse-index"
     assert after_create =~ "SYMPHONY_ISSUE_BRANCH_NAME"
     assert after_create =~ "--branch \"$task_base_branch\""
 

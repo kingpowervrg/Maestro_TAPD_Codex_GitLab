@@ -4,7 +4,7 @@ defmodule SymphonyElixir.Tracker.Tapd.Normalizer do
   """
 
   alias SymphonyElixir.Issue
-  alias SymphonyElixir.Tracker.Tapd.StoryBranch
+  alias SymphonyElixir.Tracker.Tapd.{BugAIWorkflow, StoryBranch}
   alias SymphonyElixir.Workflow.Lifecycle, as: WorkflowLifecycle
 
   @type assignee_filter ::
@@ -37,6 +37,7 @@ defmodule SymphonyElixir.Tracker.Tapd.Normalizer do
       state: state,
       lifecycle_phase: WorkflowLifecycle.phase_for_state(state, state_phase_map),
       workitem_type_id: normalize_string(workitem_type_id),
+      entity_type: "story",
       branch_name: StoryBranch.from_description(string_field(story, "description")),
       url: Keyword.get(opts, :workspace_url),
       assignee_id: assignee_id(assignees),
@@ -50,6 +51,46 @@ defmodule SymphonyElixir.Tracker.Tapd.Normalizer do
   end
 
   def normalize_story(_story, _opts), do: nil
+
+  @spec normalize_bug(map(), map(), keyword()) :: Issue.t() | nil
+  def normalize_bug(bug, tracker, opts \\ [])
+
+  def normalize_bug(bug, tracker, opts) when is_map(bug) and is_map(tracker) and is_list(opts) do
+    bug_id = string_field(bug, "id")
+    state = string_field(bug, "status")
+    state_phase_map = Keyword.get(opts, :state_phase_map, %{})
+    workflow = Keyword.get(opts, :workflow, %{})
+    assignee_filter = Keyword.get(opts, :assignee_filter)
+    assignees = bug_assignee_values(bug)
+    ai_workflow_value = BugAIWorkflow.value(bug, tracker)
+
+    %Issue{
+      id: bug_id,
+      identifier: story_identifier(bug_id),
+      title: string_field(bug, "title") || string_field(bug, "name"),
+      description: string_field(bug, "description"),
+      priority: parse_priority(string_field(bug, "priority")),
+      state: state,
+      lifecycle_phase: WorkflowLifecycle.phase_for_state(state, state_phase_map),
+      workitem_type_id: "bug",
+      entity_type: "bug",
+      branch_name: StoryBranch.from_description(string_field(bug, "description")),
+      url: Keyword.get(opts, :issue_url),
+      assignee_id: assignee_id(assignees),
+      blocked_by: [],
+      labels: extract_labels(bug),
+      custom_fields: %{
+        "AI特殊工作流" => ai_workflow_value,
+        "ai_special_workflow" => ai_workflow_value
+      },
+      workflow: workflow,
+      assigned_to_worker: assigned_to_worker?(assignees, assignee_filter) and BugAIWorkflow.accepted?(bug, tracker),
+      created_at: parse_datetime(string_field(bug, "created")),
+      updated_at: parse_datetime(string_field(bug, "modified") || string_field(bug, "updated"))
+    }
+  end
+
+  def normalize_bug(_bug, _tracker, _opts), do: nil
 
   @doc false
   @spec normalize_assignee_match_value(term()) :: String.t() | nil
@@ -68,6 +109,12 @@ defmodule SymphonyElixir.Tracker.Tapd.Normalizer do
   defp assignee_values(story) do
     story
     |> Map.get("owner", Map.get(story, :owner))
+    |> normalize_assignee_values()
+  end
+
+  defp bug_assignee_values(bug) do
+    bug
+    |> Map.get("current_owner", Map.get(bug, :current_owner))
     |> normalize_assignee_values()
   end
 

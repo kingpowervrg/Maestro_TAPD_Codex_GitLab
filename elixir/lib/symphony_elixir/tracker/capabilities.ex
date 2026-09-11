@@ -30,6 +30,7 @@ defmodule SymphonyElixir.Tracker.Capabilities do
   @save_issue_dependency "tracker.save_issue_dependency"
   @prepare_file_upload "tracker.prepare_file_upload"
   @provider_diagnostics "tracker.provider_diagnostics"
+  @complete_ai_workflow "tracker.complete_ai_workflow"
 
   @spec issue_read() :: String.t()
   def issue_read, do: @issue_read
@@ -94,6 +95,9 @@ defmodule SymphonyElixir.Tracker.Capabilities do
   @spec provider_diagnostics() :: String.t()
   def provider_diagnostics, do: @provider_diagnostics
 
+  @spec complete_ai_workflow() :: String.t()
+  def complete_ai_workflow, do: @complete_ai_workflow
+
   @impl true
   def capabilities do
     [
@@ -117,7 +121,8 @@ defmodule SymphonyElixir.Tracker.Capabilities do
       read_issue_dependencies(),
       save_issue_dependency(),
       prepare_file_upload(),
-      provider_diagnostics()
+      provider_diagnostics(),
+      complete_ai_workflow()
     ]
   end
 
@@ -135,7 +140,8 @@ defmodule SymphonyElixir.Tracker.Capabilities do
       read_issue_dependencies(),
       save_issue_dependency(),
       prepare_file_upload(),
-      provider_diagnostics()
+      provider_diagnostics(),
+      complete_ai_workflow()
     ]
   end
 

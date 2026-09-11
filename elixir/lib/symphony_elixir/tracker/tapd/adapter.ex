@@ -49,7 +49,8 @@ defmodule SymphonyElixir.Tracker.Tapd.Adapter do
       TrackerCapabilities.add_issue_relation(),
       TrackerCapabilities.read_issue_dependencies(),
       TrackerCapabilities.save_issue_dependency(),
-      TrackerCapabilities.provider_diagnostics()
+      TrackerCapabilities.provider_diagnostics(),
+      TrackerCapabilities.complete_ai_workflow()
     ]
   end
 
