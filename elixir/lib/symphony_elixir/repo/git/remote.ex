@@ -172,6 +172,7 @@ defmodule SymphonyElixir.Repo.Git.Remote do
         |> Arguments.append_depth(Keyword.get(opts, :depth))
         |> Arguments.append_filter(Keyword.get(opts, :filter))
         |> Arguments.append_sparse(Keyword.get(opts, :sparse, false))
+        |> Arguments.append_reference_if_able(Keyword.get(opts, :reference_if_able))
         |> Arguments.append_branch(branch)
         |> Kernel.++([remote_url, target_path])
 

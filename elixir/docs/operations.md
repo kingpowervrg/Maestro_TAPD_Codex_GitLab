@@ -165,6 +165,8 @@ Before connecting real systems, set:
 
 ```bash
 export SYMPHONY_WORKSPACE_ROOT=/path/to/isolated/maestro-workspaces
+# Optional; defaults to $SYMPHONY_WORKSPACE_ROOT/.git-object-cache.
+export SYMPHONY_GIT_OBJECT_CACHE_ROOT=/path/to/persistent/git-object-cache
 ```
 
 The workspace is created inside Maestro's runtime environment: local machine, SSH host, or worker environment. It is not created inside TAPD, Linear, GitHub, or CNB.
@@ -184,6 +186,19 @@ Why isolated workspaces matter:
 - code copies, logs, and temporary files do not leak across tasks;
 - failed runs can be inspected and cleaned up separately;
 - reviewers can reconstruct what happened in one agent run.
+
+The bundled `tapd/git/codex` workflow keeps one blobless bare cache per remote
+URL under `SYMPHONY_GIT_OBJECT_CACHE_ROOT`. Cache initialization and refresh are
+locked, and task clones use Git alternates to borrow cached objects. Per-task
+workspaces remain isolated; only immutable Git objects are shared. Keep the
+cache on persistent storage and do not delete or prune it while task clones
+exist. Removing a task workspace does not remove this cache.
+
+When a TAPD Bug changes from `接受/处理` to `AI已解决`, it is no longer routed to
+the worker. Maestro cleans its recorded workspace whether that change is
+observed while the agent is running, immediately after the agent exits, or
+while a continuation retry is pending. Human-review routes remain inspectable
+and are not cleaned by this cancellation rule.
 
 For TAPD, startup terminal cleanup is scoped to existing local workspace directories whose names start with `TAPD-`. Maestro reads only those issue states and skips relation enrichment during cleanup. This prevents startup from scanning every historical terminal work item in a large TAPD workspace.
 

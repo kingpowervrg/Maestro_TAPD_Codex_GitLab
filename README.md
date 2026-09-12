@@ -40,7 +40,7 @@ The point is not to let an agent run blindly. The point is this:
 
 > **A project task becomes an isolated, recorded, reviewable agent engineering run.**
 
-The isolated workspace matters because each task gets its own directory, repository copy, logs, and temporary files. Multiple projects and tasks can run in parallel without polluting each other, and failed runs are easier to inspect, clean up, and retry.
+The isolated workspace matters because each task gets its own directory, repository copy, logs, and temporary files. Multiple projects and tasks can run in parallel without polluting each other, and failed runs are easier to inspect, clean up, and retry. Large-repository templates may share immutable Git objects through a persistent cache while keeping working trees, branches, indexes, and cleanup isolated per task.
 
 ---
 

@@ -122,9 +122,13 @@ export SOURCE_REPO_PROVIDER_REPOSITORY=example-user/sample-repo
 
 For `tapd/git/codex`, use an SSH clone URL and set `GITLAB_API_TOKEN` with
 `read_api` scope. The runtime searches GitLab before adding only target
-directories to the sparse checkout. It pushes only the work branch, records
-its commit SHA and validation result in TAPD, moves the Story to human review,
-and stops.
+directories to the sparse checkout. Task clones borrow objects from one
+blobless bare cache under `$SYMPHONY_WORKSPACE_ROOT/.git-object-cache`, so
+parallel TAPD workspaces do not download the same Git metadata independently.
+It pushes only the work branch, records its commit SHA and validation result in
+TAPD, moves the Story to human review, and stops. When a Bug changes its AI
+workflow field to `AI已解决`, Maestro removes that task workspace while retaining
+the shared object cache.
 
 Before connecting real systems, set an explicit isolated workspace root:
 

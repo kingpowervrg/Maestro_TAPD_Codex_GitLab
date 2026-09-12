@@ -10,10 +10,11 @@ The bundled workspace helpers live under
 [`../priv/workspace_automation/`](../priv/workspace_automation/):
 
 - `bin/repo`: provider-neutral Git facts and side effects
+- `bin/repo-object-cache`: concurrent-safe shared bare object-cache preparation
 - `bin/repo-provider`: provider-backed PR, review, check, merge, and API
   operations
 
-Both helpers route through the `symphony` escript. A workspace must have either
+The `repo` and `repo-provider` helpers route through the `symphony` escript. A workspace must have either
 `symphony` on `PATH` or `SYMPHONY_CLI` pointing to the executable.
 
 Maestro exports configured repository fields to helper environment variables:
@@ -43,7 +44,8 @@ explicit override.
 
 Required host tools:
 
-- `bash` and `git` for workspace bootstrap and repository operations
+- `bash`, `git`, `flock`, and `mktemp` for workspace bootstrap, shared cache,
+  and repository operations
 - `gh` for GitHub-backed PR automation
 - `symphony` on `PATH`, or `SYMPHONY_CLI`, for bundled helpers
 
@@ -101,12 +103,20 @@ infers both `https://gitlab.example/api/v4` and `group/project`. Set
 an explicit override. Keep the token in the Maestro service environment; the
 template excludes it from Codex shell environments.
 
-The template bootstraps large repositories with a depth-one, blobless sparse
-clone and disables automatic Git LFS smudging. Before editing, use
-`repo_remote_search` against the task development ref, then pass only the
-smallest required directories to `repo_sparse_add`. The latter rejects the
-repository root, absolute paths, traversal, and directories absent from the
-selected ref. Fetch Git LFS objects only when the scoped work needs them.
+The template prepares one blobless bare object cache per remote URL under
+`$SYMPHONY_WORKSPACE_ROOT/.git-object-cache`, then bootstraps each task with a
+depth-one, blobless sparse clone using `--reference-if-able`. Cache preparation
+is serialized with `flock`, so concurrent TAPD tasks safely reuse the same Git
+metadata. Set `SYMPHONY_GIT_OBJECT_CACHE_ROOT` to keep the cache in another
+persistent location. The cache must outlive every task clone that references
+it; do not delete or prune it while those workspaces exist.
+
+Before editing, use `repo_remote_search` against the task development ref, then
+pass only the smallest required directories to `repo_sparse_add`. The latter
+rejects the repository root, absolute paths, traversal, and directories absent
+from the selected ref. Git LFS automatic smudging remains disabled; fetch LFS
+objects only when the scoped work needs them. Task workspace cleanup does not
+remove the shared object cache.
 
 Before production use, validate `ssh -T`, `git ls-remote`, host-key trust, DNS
 and network access, commit author configuration, and a clone/commit/push/SHA

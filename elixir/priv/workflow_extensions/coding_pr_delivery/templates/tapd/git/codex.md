@@ -86,11 +86,13 @@ hooks:
       echo "SOURCE_REPO_URL is required" >&2
       exit 1
     fi
+    git_object_cache_root="${SYMPHONY_GIT_OBJECT_CACHE_ROOT:-${SYMPHONY_WORKSPACE_ROOT}/.git-object-cache}"
+    git_object_cache="$("${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/bin/repo-object-cache" prepare "$SOURCE_REPO_URL" "$git_object_cache_root")"
     task_base_branch="${SYMPHONY_ISSUE_BRANCH_NAME:-${SOURCE_REPO_BASE_BRANCH:-}}"
     if [ -n "$task_base_branch" ]; then
-      GIT_LFS_SKIP_SMUDGE=1 "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/bin/repo" clone "$SOURCE_REPO_URL" repo --depth 1 --filter blob:none --sparse --branch "$task_base_branch"
+      GIT_LFS_SKIP_SMUDGE=1 "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/bin/repo" clone "$SOURCE_REPO_URL" repo --depth 1 --filter blob:none --sparse --reference-if-able "$git_object_cache" --branch "$task_base_branch"
     else
-      GIT_LFS_SKIP_SMUDGE=1 "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/bin/repo" clone "$SOURCE_REPO_URL" repo --depth 1 --filter blob:none --sparse
+      GIT_LFS_SKIP_SMUDGE=1 "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/bin/repo" clone "$SOURCE_REPO_URL" repo --depth 1 --filter blob:none --sparse --reference-if-able "$git_object_cache"
     fi
     git -C repo sparse-checkout reapply --sparse-index
   before_run: |

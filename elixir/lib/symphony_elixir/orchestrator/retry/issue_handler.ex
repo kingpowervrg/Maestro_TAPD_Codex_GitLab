@@ -20,6 +20,7 @@ defmodule SymphonyElixir.Orchestrator.Retry.IssueHandler do
       {:ok, issues} ->
         issues
         |> find_issue_by_id(issue_id)
+        |> resolve_missing_issue(issue_id, opts)
         |> handle_retry_issue_lookup(
           state,
           issue_id,
@@ -96,7 +97,9 @@ defmodule SymphonyElixir.Orchestrator.Retry.IssueHandler do
         )
 
       true ->
-        Events.released(emit_event, issue, state, attempt, metadata, "not_active")
+        skip_reason = retry_release_reason(issue)
+        Events.released(emit_event, issue, state, attempt, metadata, skip_reason)
+        maybe_cleanup_unrouted_workspace(cleanup_issue_workspace, issue, metadata)
         {:noreply, release_issue_claim.(state, issue_id)}
     end
   end
@@ -186,12 +189,45 @@ defmodule SymphonyElixir.Orchestrator.Retry.IssueHandler do
 
   defp find_issue_by_id(_issues, _issue_id), do: nil
 
+  defp resolve_missing_issue(%Issue{} = issue, _issue_id, _opts), do: issue
+
+  defp resolve_missing_issue(nil, issue_id, opts) when is_binary(issue_id) and is_list(opts) do
+    case Keyword.get(opts, :fetch_issue_states_by_ids) do
+      fetch_issue_states_by_ids when is_function(fetch_issue_states_by_ids, 1) ->
+        case fetch_issue_states_by_ids.([issue_id]) do
+          {:ok, issues} when is_list(issues) -> find_issue_by_id(issues, issue_id)
+          _other -> nil
+        end
+
+      _other ->
+        nil
+    end
+  rescue
+    _error -> nil
+  catch
+    _kind, _reason -> nil
+  end
+
+  defp resolve_missing_issue(_issue, _issue_id, _opts), do: nil
+
   defp cleanup_workspace(cleanup_issue_workspace, identifier, metadata)
        when is_function(cleanup_issue_workspace, 3) and is_binary(identifier) do
     cleanup_issue_workspace.(identifier, metadata[:worker_host], metadata[:workspace_path])
   end
 
   defp cleanup_workspace(_cleanup_issue_workspace, _identifier, _metadata), do: :ok
+
+  defp retry_release_reason(%Issue{} = issue) do
+    if Dispatch.issue_routable_to_worker?(issue), do: "not_active", else: "not_routed"
+  end
+
+  defp maybe_cleanup_unrouted_workspace(cleanup_issue_workspace, %Issue{} = issue, metadata) do
+    if Dispatch.issue_routable_to_worker?(issue) do
+      :ok
+    else
+      cleanup_workspace(cleanup_issue_workspace, issue.identifier, metadata)
+    end
+  end
 
   defp runtime_worker_slots_available?(%{worker_slots_available?: available?})
        when is_boolean(available?),

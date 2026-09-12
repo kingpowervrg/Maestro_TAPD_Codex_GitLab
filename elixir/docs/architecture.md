@@ -834,6 +834,10 @@ It complements:
   diff, commit, and push behavior entirely in Repo Core. Its only provider API
   capability is opt-in, read-only GitLab blob search; it does not own change
   proposals, reviews, checks, approvals, or merges.
+- Bundled `repo-object-cache` automation owns per-remote bare cache creation,
+  cross-process locking, and refresh. Repo Core owns only the clone
+  `--reference-if-able` argument; task-workspace cleanup must preserve the
+  shared cache outside individual issue directories.
 - Repo provider defaults are owned by `SymphonyElixir.RepoProvider.Defaults`.
   Config schema defaults, runtime env fallbacks, and facade defaults should use
   that module instead of hardcoding the default provider kind.
@@ -1090,6 +1094,9 @@ The table below is the quickest way to decide where code belongs.
   provider-neutral, single-issue, bounded by a short timeout, and safe to skip;
   timeout or tracker failure falls back to the cached running entry and must not
   block the orchestrator indefinitely or become a provider failure.
+- A refreshed issue that is no longer routable may trigger recorded-workspace
+  cleanup from running reconciliation, worker exit, or retry release. Review
+  and other non-active-but-routable states retain their workspaces.
 - Complete poll-cycle coordination belongs in `orchestrator/poll_cycle.ex`.
   Polling timer mechanics and refresh requests stay in
   `orchestrator/polling.ex`.

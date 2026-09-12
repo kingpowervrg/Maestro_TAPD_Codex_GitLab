@@ -14,6 +14,12 @@ defmodule SymphonyElixir.Repo.Git.Arguments do
   def append_sparse(args, true), do: args ++ ["--sparse"]
   def append_sparse(args, _sparse), do: args
 
+  @spec append_reference_if_able([String.t()], String.t() | term()) :: [String.t()]
+  def append_reference_if_able(args, path) when is_binary(path) and path != "",
+    do: args ++ ["--reference-if-able", path]
+
+  def append_reference_if_able(args, _path), do: args
+
   @spec append_branch([String.t()], String.t() | term()) :: [String.t()]
   def append_branch(args, branch) when is_binary(branch) and branch != "", do: args ++ ["--branch", branch]
   def append_branch(args, _branch), do: args

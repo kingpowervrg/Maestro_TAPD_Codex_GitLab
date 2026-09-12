@@ -42,7 +42,7 @@ defmodule SymphonyElixir.Orchestrator.Running.Reconciliation do
           skip_reason: "not_routed"
         })
 
-        Termination.terminate_running_issue(state, issue.id, false, opts)
+        Termination.terminate_running_issue(state, issue.id, true, opts)
 
       Dispatch.active_issue_state?(issue, issue.state, dispatch_context) ->
         refresh_running_issue_state(state, issue)

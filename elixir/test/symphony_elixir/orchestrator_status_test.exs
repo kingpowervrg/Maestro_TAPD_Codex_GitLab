@@ -1320,6 +1320,70 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
     refute MapSet.member?(final_state.claimed, issue_id)
   end
 
+  test "reconcile cleans the recorded workspace when issue routing is cancelled" do
+    issue_id = "issue-routing-cancelled"
+    parent = self()
+
+    worker_pid =
+      spawn(fn ->
+        receive do
+          :done -> :ok
+        end
+      end)
+
+    on_exit(fn ->
+      if Process.alive?(worker_pid), do: Process.exit(worker_pid, :kill)
+    end)
+
+    running_issue = %Issue{
+      id: issue_id,
+      identifier: "TAPD-CANCELLED",
+      state: "New",
+      assigned_to_worker: true
+    }
+
+    running_entry = %{
+      pid: worker_pid,
+      ref: make_ref(),
+      identifier: running_issue.identifier,
+      issue: running_issue,
+      worker_host: "worker-a",
+      workspace_path: "/workspaces/TAPD-CANCELLED",
+      started_at: DateTime.utc_now()
+    }
+
+    state = %{
+      running: %{issue_id => running_entry},
+      claimed: MapSet.new([issue_id]),
+      retry_attempts: %{}
+    }
+
+    cancelled_issue = %Issue{running_issue | assigned_to_worker: false}
+    dispatch_context = SymphonyElixir.Orchestrator.Dispatch.new_context(["New"], ["Done"])
+
+    opts = [
+      cleanup_issue_workspace: fn identifier, worker_host, workspace_path ->
+        send(parent, {:cleanup_workspace, identifier, worker_host, workspace_path})
+        :ok
+      end,
+      record_session_completion_totals: fn state, _running_entry -> state end
+    ]
+
+    final_state =
+      SymphonyElixir.Orchestrator.Running.reconcile_issue_states(
+        [cancelled_issue],
+        state,
+        dispatch_context,
+        opts
+      )
+
+    assert_received {:cleanup_workspace, "TAPD-CANCELLED", "worker-a", "/workspaces/TAPD-CANCELLED"}
+
+    assert wait_for_process_exit(worker_pid)
+    refute Map.has_key?(final_state.running, issue_id)
+    refute MapSet.member?(final_state.claimed, issue_id)
+  end
+
   test "reconcile follows dispatch context for terminal completion grace" do
     issue_id = "issue-custom-terminal-grace"
     active_at = DateTime.utc_now()
@@ -1488,12 +1552,128 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
     refute log =~ "issue_retry_scheduled"
   end
 
+  test "normal worker exit cleans workspace after refreshed issue routing is cancelled" do
+    issue_id = "issue-unrouted-normal-exit"
+    ref = make_ref()
+    parent = self()
+    now = DateTime.utc_now()
+
+    stale_issue = %Issue{
+      id: issue_id,
+      identifier: "TAPD-AI-RESOLVED",
+      state: "New",
+      assigned_to_worker: true
+    }
+
+    unrouted_issue = %Issue{stale_issue | assigned_to_worker: false}
+
+    running_entry = %{
+      pid: self(),
+      ref: ref,
+      run_id: "run-ai-resolved",
+      identifier: stale_issue.identifier,
+      issue: stale_issue,
+      worker_host: nil,
+      workspace_path: "/workspaces/TAPD-AI-RESOLVED",
+      session_id: "thread-ai-resolved",
+      agent_provider_kind: "codex",
+      failure_class: nil,
+      started_at: now
+    }
+
+    state =
+      SymphonyElixir.Orchestrator.State.initial()
+      |> Map.put(:running, %{issue_id => running_entry})
+      |> Map.put(:claimed, MapSet.new([issue_id]))
+
+    opts = [
+      fetch_issue_states_by_ids: fn [^issue_id] -> {:ok, [unrouted_issue]} end,
+      cleanup_issue_workspace: fn identifier, worker_host, workspace_path ->
+        send(parent, {:cleanup_workspace, identifier, worker_host, workspace_path})
+        :ok
+      end
+    ]
+
+    assert {:noreply, final_state} =
+             SymphonyElixir.Orchestrator.WorkerExit.handle_down_message(
+               state,
+               ref,
+               :normal,
+               opts
+             )
+
+    assert_received {:cleanup_workspace, "TAPD-AI-RESOLVED", nil, "/workspaces/TAPD-AI-RESOLVED"}
+
+    refute Map.has_key?(final_state.running, issue_id)
+    refute Map.has_key?(final_state.retry_attempts, issue_id)
+    assert MapSet.member?(final_state.completed, issue_id)
+  end
+
   test "worker exit options inject bounded issue-state refresh" do
     opts = SymphonyElixir.Orchestrator.ServerOptions.worker_exit_opts()
 
     assert is_function(Keyword.fetch!(opts, :fetch_issue_states_by_ids), 1)
     assert Keyword.fetch!(opts, :issue_refresh_timeout_ms) == 2_000
     assert Keyword.fetch!(opts, :issue_fact_freshness_ms) == 10_000
+    assert is_function(Keyword.fetch!(opts, :cleanup_issue_workspace), 3)
+  end
+
+  test "retry cancellation cleans workspace when refreshed issue is no longer routed" do
+    issue_id = "issue-unrouted-retry"
+    parent = self()
+
+    issue = %Issue{
+      id: issue_id,
+      identifier: "TAPD-RETRY-RESOLVED",
+      title: "AI workflow resolved",
+      state: "New",
+      assigned_to_worker: false
+    }
+
+    state =
+      SymphonyElixir.Orchestrator.State.initial()
+      |> Map.put(:claimed, MapSet.new([issue_id]))
+
+    metadata = %{
+      identifier: issue.identifier,
+      worker_host: "worker-b",
+      workspace_path: "/workspaces/TAPD-RETRY-RESOLVED"
+    }
+
+    opts = [
+      fetch_candidate_issues: fn -> {:ok, []} end,
+      fetch_issue_states_by_ids: fn [^issue_id] -> {:ok, [issue]} end,
+      dispatch_context: SymphonyElixir.Orchestrator.Dispatch.new_context(["New"], ["Done"]),
+      dispatch_runtime: %{
+        running: %{},
+        claimed: [issue_id],
+        orchestrator_slots: 1,
+        worker_slots_available?: true
+      },
+      dispatch_issue: fn _state, _issue, _attempt, _worker_host ->
+        flunk("unrouted retry must not dispatch")
+      end,
+      release_issue_claim: fn state, released_issue_id ->
+        %{state | claimed: MapSet.delete(state.claimed, released_issue_id)}
+      end,
+      cleanup_issue_workspace: fn identifier, worker_host, workspace_path ->
+        send(parent, {:cleanup_workspace, identifier, worker_host, workspace_path})
+        :ok
+      end
+    ]
+
+    assert {:noreply, final_state} =
+             SymphonyElixir.Orchestrator.Retry.IssueHandler.handle(
+               state,
+               issue_id,
+               1,
+               metadata,
+               opts
+             )
+
+    assert_received {:cleanup_workspace, "TAPD-RETRY-RESOLVED", "worker-b", "/workspaces/TAPD-RETRY-RESOLVED"}
+
+    refute MapSet.member?(final_state.claimed, issue_id)
   end
 
   test "normal worker exit uses fresh runtime issue fact without tracker refresh" do

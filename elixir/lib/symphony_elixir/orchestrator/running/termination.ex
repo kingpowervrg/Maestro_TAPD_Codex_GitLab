@@ -12,13 +12,13 @@ defmodule SymphonyElixir.Orchestrator.Running.Termination do
       %{pid: pid, ref: ref, identifier: identifier} = running_entry ->
         state = record_session_completion_totals(state, running_entry, opts)
 
-        if cleanup_workspace? do
-          cleanup_workspace(opts, identifier, running_entry)
-        end
-
         cleanup_active_agent_session(opts, pid)
         terminate_task(pid)
         demonitor(ref)
+
+        if cleanup_workspace? do
+          cleanup_workspace(opts, identifier, running_entry)
+        end
 
         state
         |> StateView.put_running(Map.delete(StateView.running_entries(state), issue_id))

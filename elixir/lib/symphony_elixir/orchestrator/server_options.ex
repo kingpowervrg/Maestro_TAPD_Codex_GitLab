@@ -37,6 +37,7 @@ defmodule SymphonyElixir.Orchestrator.ServerOptions do
   def retry_issue_opts(%State{} = state, metadata) when is_map(metadata) do
     [
       fetch_candidate_issues: &Tracker.fetch_candidate_issues/0,
+      fetch_issue_states_by_ids: &Tracker.fetch_issue_states_by_ids/1,
       dispatch_context: Runtime.dispatch_context(),
       dispatch_runtime: Runtime.dispatch_runtime(state, metadata[:worker_host]),
       dispatch_issue: &IssueDispatch.dispatch_issue/4,
@@ -61,6 +62,7 @@ defmodule SymphonyElixir.Orchestrator.ServerOptions do
       fetch_issue_states_by_ids: &Tracker.fetch_issue_states_by_ids/1,
       issue_refresh_timeout_ms: @worker_exit_issue_refresh_timeout_ms,
       issue_fact_freshness_ms: @worker_exit_issue_fact_freshness_ms,
+      cleanup_issue_workspace: &cleanup_issue_workspace/3,
       notify_dashboard: &notify_dashboard/0
     ]
   end

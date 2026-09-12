@@ -299,16 +299,22 @@ Repo-provider smoke validation is documented in
 The `tapd/git/codex` template has one read-only repo-provider surface:
 `repo_remote_search`. Its local contract coverage validates GitLab request and
 response normalization, token redaction, `repo_sparse_add`, the standard Repo
-Core inventory, and the absence of change-proposal/review/check/merge tools.
-The Repo Core dynamic-tool test uses a local bare Git repository to exercise
-sparse expansion, branch creation, diff, commit, push, and equality of local
-and published head SHAs.
+Core inventory, shared object-cache reuse, and the absence of
+change-proposal/review/check/merge tools. The object-cache helper test starts
+concurrent cache preparation, verifies both callers select the same bare cache,
+checks a task clone's alternates file, and refreshes the cache after a new
+commit. Orchestrator coverage verifies unrouted workspace cleanup during a live
+run, after normal worker exit, and from a pending retry. The Repo Core
+dynamic-tool test uses a local bare Git repository to exercise sparse
+expansion, branch creation, diff, commit, push, and equality of local and
+published head SHAs.
 
 Run the focused checks with:
 
 ```bash
 mix test test/symphony_elixir/repo_provider_git_adapter_contract_test.exs
 mix test test/symphony_elixir/repo_provider/gitlab_code_search_test.exs
+mix test test/symphony_elixir/repo_object_cache_helper_test.exs
 mix test test/symphony_elixir/repo_dynamic_tool_test.exs
 mix test test/symphony_elixir/workflow_templates_test.exs
 ```

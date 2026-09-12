@@ -862,6 +862,9 @@ defmodule SymphonyElixir.WorkflowTemplatesTest do
     after_create = get_in(config, ["hooks", "after_create"])
     assert after_create =~ "GIT_LFS_SKIP_SMUDGE=1"
     assert after_create =~ "--depth 1 --filter blob:none --sparse"
+    assert after_create =~ "repo-object-cache"
+    assert after_create =~ "SYMPHONY_GIT_OBJECT_CACHE_ROOT"
+    assert after_create =~ "--reference-if-able \"$git_object_cache\""
     assert after_create =~ "git -C repo sparse-checkout reapply --sparse-index"
     assert after_create =~ "SYMPHONY_ISSUE_BRANCH_NAME"
     assert after_create =~ "--branch \"$task_base_branch\""

@@ -270,7 +270,7 @@ defmodule SymphonyElixir.RepoCLITest do
              RepoCLI.evaluate(["diff-check", "origin/main...HEAD", "--path", repo_root], deps)
   end
 
-  test "clone renders write command result and accepts branch, depth, filter, and sparse checkout" do
+  test "clone accepts branch, depth, filter, sparse checkout, and an object reference" do
     parent_dir = tmp_dir!("clone-parent")
     target_path = Path.join(parent_dir, "repo")
 
@@ -283,6 +283,8 @@ defmodule SymphonyElixir.RepoCLITest do
         "--filter",
         "blob:none",
         "--sparse",
+        "--reference-if-able",
+        "/cache/widgets.git",
         "--branch",
         "main",
         "https://example.test/acme/widgets.git",
@@ -306,7 +308,9 @@ defmodule SymphonyElixir.RepoCLITest do
                  "1",
                  "--filter",
                  "blob:none",
-                 "--sparse"
+                 "--sparse",
+                 "--reference-if-able",
+                 "/cache/widgets.git"
                ],
                cli_deps(runner)
              )

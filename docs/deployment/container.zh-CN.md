@@ -761,6 +761,7 @@ docker build -f docker/app/Dockerfile \
 | `SYMPHONY_WORKFLOW_PATH` | 可选 | 容器内 workflow 文件路径。有值时优先于 `SYMPHONY_TEMPLATE`，例如 `/app/WORKFLOW.local.md`。 |
 | `SYMPHONY_WORKFLOW_FILE` | 可选 | 宿主机 workflow 文件路径，用于只读挂载到 `SYMPHONY_WORKFLOW_PATH`。 |
 | `SYMPHONY_WORKSPACE_ROOT` | 推荐 | 容器内 workspace root，默认 `/workspaces`。 |
+| `SYMPHONY_GIT_OBJECT_CACHE_ROOT` | 可选 | 持久化共享 bare Git 对象缓存；默认 `$SYMPHONY_WORKSPACE_ROOT/.git-object-cache`，仍有任务 workspace 引用时不要删除。 |
 | `SYMPHONY_AGENT_CREDENTIALS_STORE_ROOT` | 推荐 | Managed credential store 路径，Integration Compose 默认 `/app/.symphony/agent_credentials`。 |
 | `SYMPHONY_AGENT_CREDENTIAL_PREFLIGHT` | 推荐 | Integration Compose 默认 `auto`。有 `credential_ref` 时，容器启动前自动创建/更新并验证 managed credential；没有 API key 时会验证已持久化的 credential。可设为 `off` 或 `required`。 |
 | `SYMPHONY_AGENT_CREDENTIAL_PREFLIGHT_VERIFY_MODE` | 可选 | 默认 `auth`，credential login 后会执行最小 non-interactive provider probe，可能产生一次很小的 provider API/model 调用。设为 `command` 时只做 provider command 级检查。 |

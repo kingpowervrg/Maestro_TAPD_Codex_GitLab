@@ -761,6 +761,7 @@ Production CI should also require:
 | `SYMPHONY_WORKFLOW_PATH` | Optional | Container path to a workflow file. When set, it takes precedence over `SYMPHONY_TEMPLATE`, for example `/app/WORKFLOW.local.md`. |
 | `SYMPHONY_WORKFLOW_FILE` | Optional | Host path to the workflow file, used for the read-only mount into `SYMPHONY_WORKFLOW_PATH`. |
 | `SYMPHONY_WORKSPACE_ROOT` | Recommended | Workspace root inside the container. Defaults to `/workspaces`. |
+| `SYMPHONY_GIT_OBJECT_CACHE_ROOT` | Optional | Persistent shared bare Git object cache. Defaults to `$SYMPHONY_WORKSPACE_ROOT/.git-object-cache`; keep it while task workspaces reference it. |
 | `SYMPHONY_AGENT_CREDENTIALS_STORE_ROOT` | Recommended | Managed credential store path. Integration Compose defaults to `/app/.symphony/agent_credentials`. |
 | `SYMPHONY_AGENT_CREDENTIAL_PREFLIGHT` | Recommended | Integration Compose defaults to `auto`. When the workflow has `credential_ref`, startup creates/updates and verifies managed credentials; without an API key, it verifies the persisted credential. Set to `off` or `required` when needed. |
 | `SYMPHONY_AGENT_CREDENTIAL_PREFLIGHT_VERIFY_MODE` | Optional | Defaults to `auth`, which runs a minimal non-interactive provider probe after credential login and may make a small provider API/model call. Set to `command` to only run the provider command-level check. |

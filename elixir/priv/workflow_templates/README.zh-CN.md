@@ -59,7 +59,7 @@ Linear 任务 -> GitHub 仓库 -> Codex Agent
 | `linear/github/claude_code` | Linear + GitHub + Claude Code | Linear/GitHub 流程 |
 | `linear/github/opencode.canary` | Linear + GitHub + OpenCode canary | OpenCode 试验 |
 | `tapd/github/codex` | TAPD + GitHub + Codex | TAPD 任务到 GitHub PR |
-| `tapd/git/codex` | TAPD + GitLab 远程搜索 + Git 推送 + Codex | 先定位并稀疏下载目标目录，推送工作分支后转人工评审 |
+| `tapd/git/codex` | TAPD + GitLab 远程搜索 + Git 推送 + Codex | 多任务共享 Git 对象缓存，定位后稀疏下载目标目录；缺陷标记 AI 已解决后清理任务目录 |
 | `tapd/cnb/opencode` | TAPD + CNB + OpenCode | TAPD/CNB 流程 |
 | `tapd/cnb/claude_code` | TAPD + CNB + Claude Code | TAPD/CNB 流程 |
 

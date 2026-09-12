@@ -19,8 +19,9 @@ are human-owned or stopped states and are deliberately absent from
    in that checkout call. Confirm the working branch is neither the development
    base nor final integration branch `{{ repo.base_branch }}` and follows the
    configured work prefix before any commit or push.
-4. The initial clone is blobless, sparse, and uses a sparse index. Before editing,
-   call `repo_remote_search` with exact identifiers and the development ref to
+4. The initial clone is blobless, sparse, uses a sparse index, and borrows
+   immutable Git objects from the shared per-remote cache prepared outside task
+   workspaces. Before editing, call `repo_remote_search` with exact identifiers and the development ref to
    locate likely files without downloading blobs. Then call `repo_sparse_add`
    only for the smallest required target directories; never add `.` or the
    repository root. Fetch Git LFS objects only for explicitly
@@ -39,7 +40,7 @@ are human-owned or stopped states and are deliberately absent from
    remote repository, branch name, commit SHA, validation results, and
    reviewer-ready `suggested_mr_title` and `suggested_mr_description` text.
    These fields are handoff text only; do not create or update an MR.
-9. {% if issue.entity_type == "bug" %}Only after the code change is validated, committed, pushed, and recorded in the workpad, call `tracker.complete_ai_workflow`. This must change `AI特殊工作流` from `接受/处理` to `AI已解决`. Do not change the Bug's TAPD status. Stop immediately after the field update succeeds.{% else %}Move the Story to the configured `review` raw state through the typed tracker move tool. Stop immediately after the state update succeeds because review is a human wait state and is not active for this template.{% endif %}
+9. {% if issue.entity_type == "bug" %}Only after the code change is validated, committed, pushed, and recorded in the workpad, call `tracker.complete_ai_workflow`. This must change `AI特殊工作流` from `接受/处理` to `AI已解决`. Do not change the Bug's TAPD status. Stop immediately after the field update succeeds; Maestro then removes this task workspace but retains the shared Git object cache.{% else %}Move the Story to the configured `review` raw state through the typed tracker move tool. Stop immediately after the state update succeeds because review is a human wait state and is not active for this template.{% endif %}
 
 Push failure policy:
 

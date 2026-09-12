@@ -168,7 +168,7 @@ defmodule SymphonyElixir.Orchestrator.WorkerExit do
 
       nil ->
         running_entry = refresh_exit_issue_state(state, issue_id, running_entry, opts)
-        continue_after_normal_exit(state, issue_id, running_entry)
+        continue_after_normal_exit(state, issue_id, running_entry, opts)
     end
   end
 
@@ -182,7 +182,15 @@ defmodule SymphonyElixir.Orchestrator.WorkerExit do
 
         case retry_suppression_decision(issue_id, running_entry) do
           {:suppress, refreshed_issue, skip_reason} ->
-            suppress_retry_after_handoff(state, issue_id, running_entry, reason, refreshed_issue, skip_reason)
+            suppress_retry_after_handoff(
+              state,
+              issue_id,
+              running_entry,
+              reason,
+              refreshed_issue,
+              skip_reason,
+              opts
+            )
 
           :schedule_retry ->
             schedule_failure_retry(state, issue_id, running_entry, reason)
@@ -280,7 +288,15 @@ defmodule SymphonyElixir.Orchestrator.WorkerExit do
     )
   end
 
-  defp suppress_retry_after_handoff(state, issue_id, running_entry, reason, refreshed_issue, skip_reason) do
+  defp suppress_retry_after_handoff(
+         state,
+         issue_id,
+         running_entry,
+         reason,
+         refreshed_issue,
+         skip_reason,
+         opts
+       ) do
     refreshed_running_entry = Map.put(running_entry, :issue, refreshed_issue)
 
     Events.emit_issue_worker_finished(
@@ -314,10 +330,11 @@ defmodule SymphonyElixir.Orchestrator.WorkerExit do
       }
     )
 
+    maybe_cleanup_non_dispatchable_workspace(opts, refreshed_issue, refreshed_running_entry, skip_reason)
     complete_issue(state, issue_id)
   end
 
-  defp continue_after_normal_exit(state, issue_id, running_entry) do
+  defp continue_after_normal_exit(state, issue_id, running_entry, opts) do
     case continuation_decision(issue_id, running_entry) do
       :continue ->
         Events.emit_issue_worker_finished(
@@ -347,11 +364,25 @@ defmodule SymphonyElixir.Orchestrator.WorkerExit do
         )
 
       {:suppress, refreshed_issue, skip_reason} ->
-        suppress_continuation_after_completion(state, issue_id, running_entry, refreshed_issue, skip_reason)
+        suppress_continuation_after_completion(
+          state,
+          issue_id,
+          running_entry,
+          refreshed_issue,
+          skip_reason,
+          opts
+        )
     end
   end
 
-  defp suppress_continuation_after_completion(state, issue_id, running_entry, refreshed_issue, skip_reason) do
+  defp suppress_continuation_after_completion(
+         state,
+         issue_id,
+         running_entry,
+         refreshed_issue,
+         skip_reason,
+         opts
+       ) do
     refreshed_running_entry = Map.put(running_entry, :issue, refreshed_issue)
 
     Events.emit_issue_worker_finished(
@@ -385,8 +416,28 @@ defmodule SymphonyElixir.Orchestrator.WorkerExit do
       }
     )
 
+    maybe_cleanup_non_dispatchable_workspace(opts, refreshed_issue, refreshed_running_entry, skip_reason)
     complete_issue(state, issue_id)
   end
+
+  defp maybe_cleanup_non_dispatchable_workspace(opts, issue, running_entry, skip_reason)
+       when skip_reason in ["terminal", "not_routed"] do
+    identifier = issue.identifier || Map.get(running_entry, :identifier)
+
+    case Keyword.get(opts, :cleanup_issue_workspace) do
+      cleanup when is_function(cleanup, 3) and is_binary(identifier) ->
+        cleanup.(
+          identifier,
+          Map.get(running_entry, :worker_host),
+          Map.get(running_entry, :workspace_path)
+        )
+
+      _cleanup ->
+        :ok
+    end
+  end
+
+  defp maybe_cleanup_non_dispatchable_workspace(_opts, _issue, _running_entry, _skip_reason), do: :ok
 
   defp retry_suppression_decision(issue_id, running_entry) when is_binary(issue_id) and is_map(running_entry) do
     dispatch_context = Runtime.dispatch_context()

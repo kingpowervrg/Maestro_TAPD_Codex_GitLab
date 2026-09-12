@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage:
+  repo-object-cache prepare <remote-url> <cache-root>
+
+Creates or refreshes one blobless bare Git object cache per remote URL and
+prints its absolute path. Concurrent prepares for the same remote are locked.
+EOF
+}
+
+if [ "$#" -ne 3 ] || [ "$1" != "prepare" ]; then
+  usage >&2
+  exit 64
+fi
+
+remote_url="$2"
+cache_root="$3"
+lock_timeout_seconds="${SYMPHONY_GIT_OBJECT_CACHE_LOCK_TIMEOUT_SECONDS:-300}"
+
+if [ -z "$remote_url" ] || [ -z "$cache_root" ] || [ "$cache_root" = "/" ]; then
+  echo "repo-object-cache requires a remote URL and a non-root cache directory" >&2
+  exit 64
+fi
+
+case "$remote_url$cache_root" in
+  *$'\n'*|*$'\r'*)
+    echo "repo-object-cache arguments must not contain newlines" >&2
+    exit 64
+    ;;
+esac
+
+case "$lock_timeout_seconds" in
+  ''|*[!0-9]*|0)
+    echo "SYMPHONY_GIT_OBJECT_CACHE_LOCK_TIMEOUT_SECONDS must be a positive integer" >&2
+    exit 64
+    ;;
+esac
+
+for executable in git flock mktemp; do
+  if ! command -v "$executable" >/dev/null 2>&1; then
+    echo "repo-object-cache requires $executable" >&2
+    exit 127
+  fi
+done
+
+umask 077
+mkdir -p "$cache_root"
+cache_root="$(cd "$cache_root" && pwd -P)"
+cache_key="$(printf '%s' "$remote_url" | git hash-object --stdin)"
+cache_repo="$cache_root/$cache_key.git"
+lock_file="$cache_root/$cache_key.lock"
+
+exec 9>"$lock_file"
+if ! flock -w "$lock_timeout_seconds" 9; then
+  echo "Timed out waiting for Git object cache lock" >&2
+  exit 75
+fi
+
+if [ -d "$cache_repo" ]; then
+  if [ "$(git -C "$cache_repo" rev-parse --is-bare-repository 2>/dev/null || true)" != "true" ]; then
+    echo "Existing Git object cache is not a bare repository: $cache_repo" >&2
+    exit 74
+  fi
+
+  configured_remote="$(git -C "$cache_repo" remote get-url origin 2>/dev/null || true)"
+  if [ "$configured_remote" != "$remote_url" ]; then
+    echo "Existing Git object cache remote does not match the requested remote" >&2
+    exit 74
+  fi
+
+  GIT_LFS_SKIP_SMUDGE=1 git -C "$cache_repo" fetch \
+    --no-tags \
+    --filter=blob:none \
+    origin \
+    '+refs/heads/*:refs/heads/*'
+elif [ -e "$cache_repo" ] || [ -L "$cache_repo" ]; then
+  echo "Git object cache path exists and is not a directory: $cache_repo" >&2
+  exit 74
+else
+  temp_root="$(mktemp -d "$cache_root/.${cache_key}.XXXXXX")"
+  temp_repo="$temp_root/repo.git"
+
+  cleanup_temp() {
+    rm -rf -- "$temp_root"
+  }
+
+  trap cleanup_temp EXIT
+  GIT_LFS_SKIP_SMUDGE=1 git clone \
+    --bare \
+    --filter=blob:none \
+    --no-tags \
+    -- \
+    "$remote_url" \
+    "$temp_repo"
+  git -C "$temp_repo" config remote.origin.fetch '+refs/heads/*:refs/heads/*'
+  mv -- "$temp_repo" "$cache_repo"
+  rmdir -- "$temp_root"
+  trap - EXIT
+fi
+
+printf '%s\n' "$cache_repo"
