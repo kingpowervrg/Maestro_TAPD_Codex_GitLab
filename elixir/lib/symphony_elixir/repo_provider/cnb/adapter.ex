@@ -31,7 +31,7 @@ defmodule SymphonyElixir.RepoProvider.CNB.Adapter do
 
   @type repo_config :: map()
   @capabilities SymphonyElixir.RepoProvider.Adapter.all_capabilities() --
-                  [:pr_add_label, :pr_submit_review]
+                  [:pr_add_label, :pr_submit_review, :code_search]
   @provider_kind Kinds.cnb()
 
   @impl true

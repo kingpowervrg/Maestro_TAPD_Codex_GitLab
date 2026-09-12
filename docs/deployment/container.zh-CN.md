@@ -744,6 +744,7 @@ docker build -f docker/app/Dockerfile \
 | `linear/github/codex` | Linear + GitHub + Codex | `SYMPHONY_CODEX_TEMPLATE` 或 `SYMPHONY_WORKFLOW_PATH`、`LINEAR_API_KEY`、`LINEAR_PROJECT_SLUG`、`SOURCE_REPO_URL`、`SOURCE_REPO_BASE_BRANCH`、`GH_TOKEN` 或 `GITHUB_TOKEN`、`OPENAI_API_KEY`；使用 `compose.integration.yml --profile codex` / `runtime-agent-codex` |
 | `linear/github/claude_code` | Linear + GitHub + Claude Code | `SYMPHONY_CLAUDE_CODE_TEMPLATE` 或 `SYMPHONY_WORKFLOW_PATH`、`LINEAR_API_KEY`、`LINEAR_PROJECT_SLUG`、`SOURCE_REPO_URL`、`SOURCE_REPO_BASE_BRANCH`、`GH_TOKEN` 或 `GITHUB_TOKEN`、`CLAUDE_CODE_OAUTH_TOKEN`；使用 `compose.integration.yml --profile claude-code` / `runtime-agent-claude-code` |
 | `tapd/cnb/codebuddy_code` | TAPD + CNB + CodeBuddy Code | `SYMPHONY_CODEBUDDY_TEMPLATE` 或 `SYMPHONY_WORKFLOW_PATH`、`TAPD_API_USER`、`TAPD_API_PASSWORD`、`TAPD_WORKSPACE_ID`、`CNB_TOKEN`、`SOURCE_REPO_URL`、`CODEBUDDY_API_KEY`；使用 `compose.integration.yml --profile codebuddy` / `runtime-agent-codebuddy`；默认会自动完成 managed credential preflight |
+| `tapd/git/codex` | TAPD + GitLab 搜索 + Git 推送 + Codex | `SYMPHONY_CODEX_TEMPLATE=tapd/git/codex`、TAPD 变量、`SOURCE_REPO_URL`、`SOURCE_REPO_BASE_BRANCH`、`SOURCE_REPO_BRANCH_WORK_PREFIX`、`GITLAB_API_TOKEN`、`OPENAI_API_KEY`；默认从 clone URL 推导 GitLab API 地址和项目路径 |
 
 ### 常用变量
 
@@ -788,6 +789,9 @@ docker build -f docker/app/Dockerfile \
 | `SOURCE_REPO_BRANCH_WORK_PREFIX` | 可选工作分支前缀，quickstart 示例使用 `maestro/`。 |
 | `SOURCE_REPO_PROVIDER_REPOSITORY` | 可选显式 provider repository name，例如 GitHub 的 `<owner>/<repo>`。 |
 | `SOURCE_REPO_PROVIDER_REQUIRED_PR_LABEL` | 可选 GitHub PR label enforcement。 |
+| `GITLAB_API_TOKEN` | `repo_remote_search` 使用的 GitLab `read_api` Token；仅保存在 Maestro 服务环境。 |
+| `GITLAB_API_BASE_URL` | 可选 GitLab API v4 地址覆盖。 |
+| `GITLAB_PROJECT_ID` | 可选数字项目 ID 或 `group/project` 覆盖。 |
 | `GH_TOKEN` | GitHub token。与 `GITHUB_TOKEN` 二选一即可；建议只设置一个，避免混淆。 |
 | `GITHUB_TOKEN` | GitHub token。与 `GH_TOKEN` 二选一即可；建议只设置一个，避免混淆。 |
 | `CNB_TOKEN` | CNB token。 |

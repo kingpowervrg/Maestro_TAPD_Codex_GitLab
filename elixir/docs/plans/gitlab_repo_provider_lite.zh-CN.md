@@ -1,5 +1,9 @@
 # GitLab Git-only 基础操作落地计划
 
+> 更新（2026-09-12）：最初的“零 GitLab API”边界已被后续需求收窄调整。
+> 当前 `tapd/git/codex` 只新增只读代码搜索 API，MR、评论、Pipeline、审批
+> 和合并仍保持人工处理。现行配置见 `docs/repo_provider.md`。
+
 状态：In Progress（代码、Git SSH 写入验证、质量门禁和 TAPD 只读候选任务校验已完成；端到端灰度待完成）
 版本：Lite（仅 Git 基础操作）  
 创建日期：2026-09-02  

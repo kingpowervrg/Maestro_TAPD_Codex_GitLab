@@ -816,6 +816,9 @@ defmodule SymphonyElixir.WorkflowTemplatesTest do
            }
 
     assert settings.repo.provider.kind == RepoProviderKinds.git()
+    assert settings.repo.provider.options["remote_code_search"] == "gitlab"
+    assert get_in(config, ["repo", "provider", "options", "gitlab_api_base_url"]) == "$GITLAB_API_BASE_URL"
+    assert get_in(config, ["repo", "provider", "options", "gitlab_project_id"]) == "$GITLAB_PROJECT_ID"
     assert get_in(config, ["tracker", "provider", "assignee"]) == "$TAPD_ASSIGNEE"
 
     assert get_in(config, ["tracker", "provider", "platform", "bug_ai_workflow"]) == %{
@@ -882,7 +885,15 @@ defmodule SymphonyElixir.WorkflowTemplatesTest do
       |> SymphonyElixir.Agent.DynamicTool.Context.tool_specs()
       |> Enum.map(&Map.fetch!(&1, "name"))
 
-    assert Enum.sort(tool_names) == Enum.sort(~w(repo_checkout repo_diff repo_commit repo_push))
+    assert Enum.sort(tool_names) ==
+             Enum.sort(~w(repo_checkout repo_diff repo_commit repo_push repo_remote_search repo_sparse_add))
+
+    assert prompt =~ "`repo_remote_search`"
+    assert prompt =~ "`repo_sparse_add`"
+
+    assert get_in(config, ["agent_provider", "options", "command"]) =~
+             ~s(shell_environment_policy.exclude=["GITLAB_API_TOKEN"])
+
     refute Enum.any?(tool_names, &String.contains?(&1, "change_proposal"))
     refute Enum.any?(tool_names, &(&1 =~ ~r/(review|checks|merge|land)/))
 
@@ -897,7 +908,7 @@ defmodule SymphonyElixir.WorkflowTemplatesTest do
     end
 
     assert prompt =~ "publishedHeadSha"
-    assert prompt =~ "git sparse-checkout add <path>"
+    refute prompt =~ "git sparse-checkout add <path>"
     assert prompt =~ "suggested_mr_title"
     assert prompt =~ "do not create or update an MR"
     refute prompt =~ "Create or update the GitHub PR"

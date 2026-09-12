@@ -87,7 +87,7 @@ where the task comes from / where the Git repository or code platform is / which
 | `linear/github/codex` | Linear + GitHub + Codex | Codex on Linear/GitHub tasks |
 | `linear/github/claude_code` | Linear + GitHub + Claude Code | Claude Code on Linear/GitHub tasks |
 | `tapd/github/codex` | TAPD + GitHub + Codex | TAPD task + GitHub repository |
-| `tapd/git/codex` | TAPD + Git remote + Codex | Git-only branch delivery with human review |
+| `tapd/git/codex` | TAPD + GitLab code search + Git remote + Codex | Sparse branch delivery with human review |
 | `tapd/cnb/opencode` | TAPD + CNB + OpenCode | TAPD/CNB flow |
 | `tapd/cnb/claude_code` | TAPD + CNB + Claude Code | TAPD/CNB flow |
 
@@ -120,9 +120,11 @@ export SOURCE_REPO_BASE_BRANCH=main
 export SOURCE_REPO_PROVIDER_REPOSITORY=example-user/sample-repo
 ```
 
-For `tapd/git/codex`, use an SSH clone URL and omit the provider repository and
-API credentials. The runtime pushes only the work branch, records its commit
-SHA and validation result in TAPD, moves the Story to human review, and stops.
+For `tapd/git/codex`, use an SSH clone URL and set `GITLAB_API_TOKEN` with
+`read_api` scope. The runtime searches GitLab before adding only target
+directories to the sparse checkout. It pushes only the work branch, records
+its commit SHA and validation result in TAPD, moves the Story to human review,
+and stops.
 
 Before connecting real systems, set an explicit isolated workspace root:
 
@@ -147,6 +149,7 @@ Example: TAPD + a Git-only SSH remote + Codex:
 export SOURCE_REPO_URL=git@gitlab.example.com:group/project.git
 export SOURCE_REPO_BASE_BRANCH=main
 export SOURCE_REPO_BRANCH_WORK_PREFIX=maestro/
+export GITLAB_API_TOKEN=...
 
 ./bin/symphony \
   --i-understand-that-this-will-be-running-without-the-usual-guardrails \

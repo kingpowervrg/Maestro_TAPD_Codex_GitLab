@@ -44,6 +44,9 @@ defmodule SymphonyElixir.Repo do
   @spec diff_check(Path.t(), [String.t()], keyword()) :: result(String.t())
   def diff_check(path, args, opts), do: Git.diff_check(path, args, opts)
 
+  @spec sparse_add(Path.t(), [String.t()], String.t(), keyword()) :: result([String.t()])
+  def sparse_add(path, paths, ref \\ "HEAD", opts \\ []), do: Git.sparse_add(path, paths, ref, opts)
+
   @spec preflight(Path.t(), String.t(), keyword()) :: result(Preflight.t())
   def preflight(path \\ ".", remote \\ "origin", opts \\ []) do
     with {:ok, root} <- root(path, opts),

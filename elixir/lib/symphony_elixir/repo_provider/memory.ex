@@ -85,6 +85,12 @@ defmodule SymphonyElixir.RepoProvider.Memory do
   end
 
   @impl true
+  def code_search(_repo, opts \\ []) do
+    send_event({:memory_repo_provider_code_search, opts})
+    {:ok, Application.get_env(:symphony_elixir, :memory_repo_provider_code_search, %{})}
+  end
+
+  @impl true
   def pr_issue_comments(_repo, _opts \\ []) do
     comments = Application.get_env(:symphony_elixir, :memory_repo_provider_issue_comments, [])
     {:ok, comments}

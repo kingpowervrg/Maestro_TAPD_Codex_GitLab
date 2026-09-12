@@ -10,6 +10,7 @@ defmodule SymphonyElixir.RepoProvider.ToolExecutor do
   alias SymphonyElixir.RepoProvider.ChangeProposalBody
   alias SymphonyElixir.RepoProvider.CheckRun
   alias SymphonyElixir.RepoProvider.Error
+  alias SymphonyElixir.RepoProvider.GitLab.CodeSearch
 
   @schema_version "1"
   @risk_flags ["external_network", "secret_access", "external_process", "privileged_api"]
@@ -43,6 +44,7 @@ defmodule SymphonyElixir.RepoProvider.ToolExecutor do
   @checks_tool "repo_read_change_proposal_checks"
   @merge_tool "repo_merge_change_proposal"
   @close_tool "repo_close_change_proposal"
+  @remote_search_tool "repo_remote_search"
 
   @snapshot_capability RepoProviderCapabilities.change_proposal_snapshot()
   @create_or_update_capability RepoProviderCapabilities.create_or_update_change_proposal()
@@ -53,6 +55,7 @@ defmodule SymphonyElixir.RepoProvider.ToolExecutor do
   @checks_capability RepoProviderCapabilities.read_change_proposal_checks()
   @merge_capability RepoProviderCapabilities.merge_change_proposal()
   @close_capability RepoProviderCapabilities.close_change_proposal()
+  @remote_search_capability RepoProviderCapabilities.remote_search()
 
   @tool_requirements %{
     @snapshot_tool => [:pr_view],
@@ -63,7 +66,8 @@ defmodule SymphonyElixir.RepoProvider.ToolExecutor do
     @reply_review_comment_tool => [:pr_reply_review_comment],
     @checks_tool => [:pr_checks],
     @merge_tool => [:pr_merge],
-    @close_tool => [:pr_close]
+    @close_tool => [:pr_close],
+    @remote_search_tool => [:code_search]
   }
 
   @spec tool_specs(map()) :: [map()]
@@ -79,9 +83,10 @@ defmodule SymphonyElixir.RepoProvider.ToolExecutor do
       reply_review_comment_spec(repo),
       checks_spec(repo),
       merge_spec(repo),
-      close_spec(repo)
+      close_spec(repo),
+      remote_search_spec(repo)
     ]
-    |> Enum.filter(&requirements_satisfied?(&1, supported))
+    |> Enum.filter(&(requirements_satisfied?(&1, supported) and configured?(&1, repo)))
   end
 
   def tool_specs(_repo), do: []
@@ -149,6 +154,12 @@ defmodule SymphonyElixir.RepoProvider.ToolExecutor do
   def execute(repo, @close_tool, arguments, opts) when is_map(repo) and is_list(opts) do
     if supported?(repo, @close_tool),
       do: close_change_proposal(repo, arguments, opts),
+      else: unsupported_tool(repo)
+  end
+
+  def execute(repo, @remote_search_tool, arguments, opts) when is_map(repo) and is_list(opts) do
+    if supported?(repo, @remote_search_tool) and CodeSearch.enabled?(repo),
+      do: remote_search(repo, arguments, opts),
       else: unsupported_tool(repo)
   end
 
@@ -493,6 +504,27 @@ defmodule SymphonyElixir.RepoProvider.ToolExecutor do
     )
   end
 
+  defp remote_search_spec(repo) do
+    tool_spec(
+      repo,
+      @remote_search_tool,
+      @remote_search_capability,
+      "Search GitLab repository blobs at a remote ref before expanding the local sparse checkout. The API token remains server-side.",
+      "read_only",
+      %{
+        "type" => "object",
+        "additionalProperties" => false,
+        "required" => ["query"],
+        "properties" => %{
+          "query" => %{"type" => "string", "minLength" => 1, "description" => "Exact identifier or text to search for."},
+          "ref" => %{"type" => ["string", "null"], "description" => "Git branch, tag, or commit to search. Defaults to the configured base branch."},
+          "path" => %{"type" => ["string", "null"], "description" => "Optional repository-relative path prefix used to filter matches."},
+          "max_results" => %{"type" => "integer", "minimum" => 1, "maximum" => 100, "description" => "Maximum matches to return. Defaults to 20."}
+        }
+      }
+    )
+  end
+
   defp tool_spec(repo, name, capability, description, side_effect, input_schema) do
     %{
       "name" => name,
@@ -516,6 +548,9 @@ defmodule SymphonyElixir.RepoProvider.ToolExecutor do
     supported = MapSet.new(RepoProvider.capabilities(repo))
     Enum.all?(requirements(tool), &MapSet.member?(supported, &1))
   end
+
+  defp configured?(%{"name" => @remote_search_tool}, repo), do: CodeSearch.enabled?(repo)
+  defp configured?(_spec, _repo), do: true
 
   defp requirements(tool), do: Map.get(@tool_requirements, tool, [])
 
@@ -635,6 +670,15 @@ defmodule SymphonyElixir.RepoProvider.ToolExecutor do
          "changeProposal" => %{"target" => args.number, "url" => url, "state" => "closed"},
          "action" => "closed"
        })}
+    else
+      {:error, reason} -> typed_failure(reason)
+    end
+  end
+
+  defp remote_search(repo, arguments, opts) do
+    with {:ok, args} <- remote_search_args(repo, arguments),
+         {:ok, result} <- RepoProvider.code_search(repo, Keyword.merge(opts, Map.to_list(args))) do
+      {:success, success_payload(result)}
     else
       {:error, reason} -> typed_failure(reason)
     end
@@ -1040,6 +1084,23 @@ defmodule SymphonyElixir.RepoProvider.ToolExecutor do
   defp close_args(_arguments),
     do: {:error, {:invalid_arguments, "Expected an object with number for close."}}
 
+  defp remote_search_args(repo, arguments) when is_map(arguments) do
+    with :ok <- validate_allowed_fields(arguments, ["query", "ref", "path", "max_results"]),
+         {:ok, query} <- required_string(arguments, "query"),
+         {:ok, max_results} <- optional_integer(arguments, "max_results", 20, 1, 100) do
+      {:ok,
+       %{
+         query: query,
+         ref: nullable_string(arguments, "ref") || SymphonyElixir.RepoProvider.Config.base_branch(repo),
+         path: nullable_string(arguments, "path"),
+         max_results: max_results
+       }}
+    end
+  end
+
+  defp remote_search_args(_repo, _arguments),
+    do: {:error, {:invalid_arguments, "Expected an object for remote code search."}}
+
   defp mode(arguments) do
     case nullable_string(arguments, "mode") || @default_change_proposal_mode do
       mode when mode in @change_proposal_modes -> {:ok, mode}
@@ -1140,6 +1201,14 @@ defmodule SymphonyElixir.RepoProvider.ToolExecutor do
     case optional_value(arguments, key) do
       value when is_boolean(value) -> value
       _value -> default
+    end
+  end
+
+  defp optional_integer(arguments, key, default, minimum, maximum) do
+    case optional_value(arguments, key) do
+      nil -> {:ok, default}
+      value when is_integer(value) and value >= minimum and value <= maximum -> {:ok, value}
+      _value -> {:error, {:invalid_arguments, "#{key} must be an integer from #{minimum} to #{maximum}."}}
     end
   end
 
@@ -1256,6 +1325,10 @@ defmodule SymphonyElixir.RepoProvider.ToolExecutor do
   defp atom_key("merge_style"), do: :merge_style
   defp atom_key("subject"), do: :subject
   defp atom_key("comment"), do: :comment
+  defp atom_key("query"), do: :query
+  defp atom_key("ref"), do: :ref
+  defp atom_key("path"), do: :path
+  defp atom_key("max_results"), do: :max_results
   defp atom_key(_key), do: nil
 
   defp check_summary(checks) when is_list(checks) do

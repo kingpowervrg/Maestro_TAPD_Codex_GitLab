@@ -145,11 +145,12 @@ defmodule SymphonyElixir.RepoProviderTest do
 
   test "repo-provider exposes explicit capabilities per adapter" do
     all_capabilities = SymphonyElixir.RepoProvider.Adapter.all_capabilities()
-    cnb_capabilities = all_capabilities -- [:pr_add_label, :pr_submit_review]
+    github_capabilities = all_capabilities -- [:code_search]
+    cnb_capabilities = all_capabilities -- [:pr_add_label, :pr_submit_review, :code_search]
 
-    assert RepoProvider.capabilities(%{provider: %{kind: "github"}}) == all_capabilities
+    assert RepoProvider.capabilities(%{provider: %{kind: "github"}}) == github_capabilities
     assert RepoProvider.capabilities(%{provider: %{kind: "cnb"}}) == cnb_capabilities
-    assert RepoProvider.capabilities(%{provider: %{kind: "git"}}) == []
+    assert RepoProvider.capabilities(%{provider: %{kind: "git"}}) == [:code_search]
     assert RepoProvider.capabilities(%{provider: %{kind: "memory"}}) == all_capabilities
     assert RepoProvider.capabilities(%{provider: %{kind: "gitlab"}}) == []
 
@@ -158,6 +159,7 @@ defmodule SymphonyElixir.RepoProviderTest do
     assert RepoProvider.supports?(%{provider: %{kind: "cnb"}}, :healthcheck)
     refute RepoProvider.supports?(%{provider: %{kind: "cnb"}}, :pr_add_label)
     refute RepoProvider.supports?(%{provider: %{kind: "cnb"}}, :pr_submit_review)
+    assert RepoProvider.supports?(%{provider: %{kind: "git"}}, :code_search)
     refute RepoProvider.supports?(%{provider: %{kind: "git"}}, :pr_view)
     refute RepoProvider.supports?(%{provider: %{kind: "gitlab"}}, :pr_view)
   end

@@ -8,7 +8,7 @@ defmodule SymphonyElixir.Repo.Git do
   """
 
   alias SymphonyElixir.Repo.Error
-  alias SymphonyElixir.Repo.Git.{Branches, Command, Commits, Inspection, Remote}
+  alias SymphonyElixir.Repo.Git.{Branches, Command, Commits, Inspection, Remote, SparseCheckout}
   alias SymphonyElixir.Repo.Status
 
   @type command_result :: {:ok, String.t()} | {:error, {non_neg_integer() | atom(), String.t()}}
@@ -59,6 +59,11 @@ defmodule SymphonyElixir.Repo.Git do
   @spec diff_check(Path.t(), [String.t()], keyword()) :: result(String.t())
   def diff_check(path, args, opts) when is_binary(path) and is_list(args) and is_list(opts),
     do: Inspection.diff_check(path, args, opts)
+
+  @spec sparse_add(Path.t(), [String.t()], String.t(), keyword()) :: result([String.t()])
+  def sparse_add(path, paths, ref \\ "HEAD", opts \\ [])
+      when is_binary(path) and is_list(paths) and is_binary(ref) and is_list(opts),
+      do: SparseCheckout.add(path, paths, ref, opts)
 
   @spec fetch(Path.t(), String.t(), keyword()) :: result(String.t())
   def fetch(path \\ ".", remote \\ "origin", opts \\ [])

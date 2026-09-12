@@ -17,6 +17,7 @@ defmodule SymphonyElixir.RepoProvider.Capabilities do
   @read_change_proposal_checks "repo.read_change_proposal_checks"
   @merge_change_proposal "repo.merge_change_proposal"
   @close_change_proposal "repo.close_change_proposal"
+  @remote_search "repo.remote_search"
 
   @change_proposal_create "repo_provider.change_proposal.create"
   @change_proposal_read "repo_provider.change_proposal.read"
@@ -24,13 +25,15 @@ defmodule SymphonyElixir.RepoProvider.Capabilities do
   @review_write "repo_provider.review.write"
   @check_read "repo_provider.check.read"
   @merge "repo_provider.merge"
+  @code_search "repo_provider.code_search"
 
   @adapter_capability_map %{
     pr_create: @change_proposal_create,
     pr_view: @change_proposal_read,
     pr_reviews: @review_read,
     pr_checks: @check_read,
-    pr_merge: @merge
+    pr_merge: @merge,
+    code_search: @code_search
   }
 
   @spec change_proposal_snapshot() :: String.t()
@@ -60,6 +63,9 @@ defmodule SymphonyElixir.RepoProvider.Capabilities do
   @spec close_change_proposal() :: String.t()
   def close_change_proposal, do: @close_change_proposal
 
+  @spec remote_search() :: String.t()
+  def remote_search, do: @remote_search
+
   @spec change_proposal_create() :: String.t()
   def change_proposal_create, do: @change_proposal_create
 
@@ -77,6 +83,9 @@ defmodule SymphonyElixir.RepoProvider.Capabilities do
 
   @spec merge() :: String.t()
   def merge, do: @merge
+
+  @spec code_search() :: String.t()
+  def code_search, do: @code_search
 
   @impl true
   def capabilities do
@@ -102,7 +111,8 @@ defmodule SymphonyElixir.RepoProvider.Capabilities do
       reply_change_proposal_review_comment(),
       read_change_proposal_checks(),
       merge_change_proposal(),
-      close_change_proposal()
+      close_change_proposal(),
+      remote_search()
     ]
   end
 

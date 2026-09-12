@@ -31,6 +31,7 @@ defmodule SymphonyElixir.RepoProviderAdapterContract do
     pr_close? = :pr_close in capabilities
     pr_merge? = :pr_merge in capabilities
     pr_checks? = :pr_checks in capabilities
+    code_search? = :code_search in capabilities
     api? = :api in capabilities
     run_list? = :run_list in capabilities
     run_view? = :run_view in capabilities
@@ -231,6 +232,17 @@ defmodule SymphonyElixir.RepoProviderAdapterContract do
                    @adapter.pr_checks(
                      adapter_contract_config(),
                      adapter_contract_opts(:pr_checks)
+                   )
+                 )
+        end
+      end
+
+      if unquote(code_search?) do
+        test "code_search/2 returns {:ok, map} or {:error, _}" do
+          assert adapter_contract_map_result?(
+                   @adapter.code_search(
+                     adapter_contract_config(),
+                     adapter_contract_opts(:code_search)
                    )
                  )
         end

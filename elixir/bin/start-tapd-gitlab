@@ -24,6 +24,7 @@ required_variables=(
   SOURCE_REPO_URL
   SOURCE_REPO_BASE_BRANCH
   SOURCE_REPO_BRANCH_WORK_PREFIX
+  GITLAB_API_TOKEN
 )
 
 for variable_name in "${required_variables[@]}"; do

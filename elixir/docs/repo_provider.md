@@ -49,8 +49,8 @@ Required host tools:
 
 Provider credentials:
 
-- Git-only: an SSH key or other Git-native credential accepted by the remote;
-  no hosting-platform API token or CLI is required
+- Git remote: an SSH key or other Git-native credential accepted by the remote;
+  `tapd/git/codex` additionally uses `GITLAB_API_TOKEN` for read-only code search
 - GitHub: `GH_TOKEN`, `GITHUB_TOKEN`, or an already-authenticated `gh` keyring
   with access to the target repository and PR checks
 - CNB: `CNB_TOKEN`
@@ -85,28 +85,28 @@ provider merge operations.
 
 ## Git-Only Provider
 
-Set `repo.provider.kind: git` when the repository host is used only as a Git
-remote. `SymphonyElixir.RepoProvider.Git.Adapter` declares no optional
-capabilities, so it contributes no change-proposal, review, check, pipeline,
-approval, merge, or hosting-API typed tools. It also performs no `gh`, `glab`,
-or token preflight. Repo Core still contributes `repo_checkout`, `repo_diff`,
-`repo_commit`, and `repo_push`.
+Set `repo.provider.kind: git` when change proposals and review remain
+human-owned. `SymphonyElixir.RepoProvider.Git.Adapter` contributes no
+change-proposal, review, check, pipeline, approval, or merge tools. A workflow
+may explicitly enable its narrow `repo_remote_search` capability with
+`repo.provider.options.remote_code_search: gitlab`. Repo Core contributes
+`repo_sparse_add`, `repo_checkout`, `repo_diff`, `repo_commit`, and `repo_push`.
 
-The bundled `tapd/git/codex` template uses this mode. Configure
+The bundled `tapd/git/codex` template enables read-only GitLab search. Configure
 `SOURCE_REPO_URL`, `SOURCE_REPO_BASE_BRANCH`, and
-`SOURCE_REPO_BRANCH_WORK_PREFIX`; do not configure
-`SOURCE_REPO_PROVIDER_REPOSITORY`, provider API base URLs, or a GitLab API
-token. The SSH identity must have read access plus write access to the allowed
-work-branch prefix, while the default branch should remain protected from
-direct pushes.
+`SOURCE_REPO_BRANCH_WORK_PREFIX`, plus `GITLAB_API_TOKEN` with `read_api` scope.
+For a standard SSH URL such as `git@gitlab.example:group/project.git`, Maestro
+infers both `https://gitlab.example/api/v4` and `group/project`. Set
+`GITLAB_API_BASE_URL` or `GITLAB_PROJECT_ID` only for a non-standard endpoint or
+an explicit override. Keep the token in the Maestro service environment; the
+template excludes it from Codex shell environments.
 
 The template bootstraps large repositories with a depth-one, blobless sparse
-clone and disables automatic Git LFS smudging. This keeps the initial workspace
-bounded even when the remote repository is very large. Before editing, expand
-the sparse checkout only for Story-required directories with
-`git sparse-checkout add <path>` and fetch Git LFS objects only when the scoped
-work explicitly needs them. The repo helper exposes the corresponding clone
-options as `--filter <spec>` and `--sparse`.
+clone and disables automatic Git LFS smudging. Before editing, use
+`repo_remote_search` against the task development ref, then pass only the
+smallest required directories to `repo_sparse_add`. The latter rejects the
+repository root, absolute paths, traversal, and directories absent from the
+selected ref. Fetch Git LFS objects only when the scoped work needs them.
 
 Before production use, validate `ssh -T`, `git ls-remote`, host-key trust, DNS
 and network access, commit author configuration, and a clone/commit/push/SHA

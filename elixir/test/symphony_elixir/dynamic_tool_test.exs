@@ -1100,7 +1100,8 @@ defmodule SymphonyElixir.Agent.DynamicToolTest do
       "repo_checkout",
       "repo_diff",
       "repo_commit",
-      "repo_push"
+      "repo_push",
+      "repo_sparse_add"
     ]
   end
 

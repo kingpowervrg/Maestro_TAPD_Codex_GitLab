@@ -19,9 +19,11 @@ are human-owned or stopped states and are deliberately absent from
    in that checkout call. Confirm the working branch is neither the development
    base nor final integration branch `{{ repo.base_branch }}` and follows the
    configured work prefix before any commit or push.
-4. The initial clone is blobless, sparse, and uses a sparse index. Before editing, inspect the tree
-   and expand sparse checkout only for directories required by the Story with
-   `git sparse-checkout add <path>`. Fetch Git LFS objects only for explicitly
+4. The initial clone is blobless, sparse, and uses a sparse index. Before editing,
+   call `repo_remote_search` with exact identifiers and the development ref to
+   locate likely files without downloading blobs. Then call `repo_sparse_add`
+   only for the smallest required target directories; never add `.` or the
+   repository root. Fetch Git LFS objects only for explicitly
    required paths. Then work only under `repo/`, implement the scoped change,
    and run every repository and Story-required validation step. Record commands
    and outcomes in the workpad.

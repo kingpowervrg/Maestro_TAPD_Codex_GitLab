@@ -25,7 +25,7 @@ defmodule SymphonyElixir.RepoProvider.GitHub.Adapter do
   alias SymphonyElixir.RepoProvider.Kinds
 
   @type repo_config :: map()
-  @capabilities SymphonyElixir.RepoProvider.Adapter.all_capabilities()
+  @capabilities SymphonyElixir.RepoProvider.Adapter.all_capabilities() -- [:code_search]
   @provider_kind Kinds.github()
 
   # ── Required ─────────────────────────────────────────────────────

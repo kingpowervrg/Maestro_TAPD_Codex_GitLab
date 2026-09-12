@@ -25,11 +25,13 @@ defmodule SymphonyElixir.Repo.ToolExecutor do
   @diff_tool "repo_diff"
   @commit_tool "repo_commit"
   @push_tool "repo_push"
+  @sparse_add_tool "repo_sparse_add"
 
   @checkout_capability RepoCapabilities.checkout()
   @diff_capability RepoCapabilities.diff()
   @commit_capability RepoCapabilities.commit()
   @push_capability RepoCapabilities.push()
+  @sparse_add_capability RepoCapabilities.sparse_add()
 
   @spec tool_specs(map()) :: [map()]
   def tool_specs(repo) when is_map(repo) do
@@ -37,7 +39,8 @@ defmodule SymphonyElixir.Repo.ToolExecutor do
       checkout_spec(repo),
       diff_spec(repo),
       commit_spec(repo),
-      push_spec(repo)
+      push_spec(repo),
+      sparse_add_spec(repo)
     ]
   end
 
@@ -61,6 +64,9 @@ defmodule SymphonyElixir.Repo.ToolExecutor do
 
   def execute(repo, @push_tool, arguments, opts) when is_map(repo) and is_list(opts),
     do: push(repo, arguments, opts)
+
+  def execute(repo, @sparse_add_tool, arguments, opts) when is_map(repo) and is_list(opts),
+    do: sparse_add(repo, arguments, opts)
 
   def execute(repo, _tool, _arguments, _opts) when is_map(repo), do: unsupported_tool(repo)
   def execute(_repo, _tool, _arguments, _opts), do: {:error, :repo_dynamic_tool_context_unavailable}
@@ -155,6 +161,35 @@ defmodule SymphonyElixir.Repo.ToolExecutor do
     )
   end
 
+  defp sparse_add_spec(repo) do
+    tool_spec(
+      repo,
+      @sparse_add_tool,
+      @sparse_add_capability,
+      "Add only selected repository directories to an existing sparse checkout. Repository-root and traversal paths are rejected.",
+      "write",
+      @risk_flags ++ ["external_network"],
+      %{
+        "type" => "object",
+        "additionalProperties" => false,
+        "required" => ["paths"],
+        "properties" => %{
+          "paths" => %{
+            "type" => "array",
+            "minItems" => 1,
+            "maxItems" => 20,
+            "items" => %{"type" => "string"},
+            "description" => "Safe repository-relative target directories returned or inferred from remote search matches."
+          },
+          "ref" => %{
+            "type" => ["string", "null"],
+            "description" => "Ref used to verify each directory exists. Defaults to HEAD."
+          }
+        }
+      }
+    )
+  end
+
   defp tool_spec(repo, name, capability, description, side_effect, risk_flags, input_schema) do
     %{
       "name" => name,
@@ -240,6 +275,22 @@ defmodule SymphonyElixir.Repo.ToolExecutor do
     end
   end
 
+  defp sparse_add(repo, arguments, opts) do
+    with {:ok, args} <- sparse_add_args(arguments),
+         {:ok, paths} <- Repo.sparse_add(Context.path(repo), args.paths, args.ref, opts),
+         {:ok, status} <- Repo.status(Context.path(repo), opts) do
+      {:success,
+       success_payload(%{
+         "action" => "sparse_paths_added",
+         "paths" => paths,
+         "ref" => args.ref,
+         "status" => status_payload(status)
+       })}
+    else
+      {:error, reason} -> typed_failure(reason)
+    end
+  end
+
   defp checkout_args(arguments) when is_map(arguments) do
     with {:ok, mode} <- enum(arguments, "mode", ["create_or_switch", "create", "switch"], "create_or_switch") do
       {:ok,
@@ -299,6 +350,19 @@ defmodule SymphonyElixir.Repo.ToolExecutor do
   end
 
   defp push_args(_arguments), do: {:error, {:invalid_arguments, "Expected an object for repo push."}}
+
+  defp sparse_add_args(arguments) when is_map(arguments) do
+    with {:ok, paths} <- optional_string_list(arguments, "paths") do
+      if paths == [] do
+        {:error, {:invalid_arguments, "Repo sparse add requires at least one target directory."}}
+      else
+        {:ok, %{paths: Enum.uniq(paths), ref: nullable_string(arguments, "ref") || "HEAD"}}
+      end
+    end
+  end
+
+  defp sparse_add_args(_arguments),
+    do: {:error, {:invalid_arguments, "Expected an object for repo sparse add."}}
 
   defp checkout_branch(_repo, %{branch: branch}, _opts) when is_binary(branch), do: {:ok, branch}
 
@@ -558,6 +622,8 @@ defmodule SymphonyElixir.Repo.ToolExecutor do
   defp atom_key("set_upstream"), do: :set_upstream
   defp atom_key("force_with_lease"), do: :force_with_lease
   defp atom_key("verify"), do: :verify
+  defp atom_key("paths"), do: :paths
+  defp atom_key("ref"), do: :ref
   defp atom_key(_key), do: nil
 
   defp maybe_put(opts, _key, false), do: opts

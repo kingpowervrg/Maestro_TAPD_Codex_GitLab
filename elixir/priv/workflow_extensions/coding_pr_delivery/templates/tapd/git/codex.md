@@ -76,6 +76,10 @@ repo:
     work_prefix: $SOURCE_REPO_BRANCH_WORK_PREFIX
   provider:
     kind: git
+    options:
+      remote_code_search: gitlab
+      gitlab_api_base_url: $GITLAB_API_BASE_URL
+      gitlab_project_id: $GITLAB_PROJECT_ID
 hooks:
   after_create: |
     if [ -z "${SOURCE_REPO_URL:-}" ]; then
@@ -103,7 +107,7 @@ agent:
 agent_provider:
   kind: codex
   options:
-    command: codex --config shell_environment_policy.inherit=all --config model_reasoning_effort=medium --config 'project_root_markers=[]' --model gpt-5.3-codex app-server
+    command: codex --config shell_environment_policy.inherit=all --config 'shell_environment_policy.exclude=["GITLAB_API_TOKEN"]' --config model_reasoning_effort=medium --config 'project_root_markers=[]' --model gpt-5.3-codex app-server
     approval_policy: never
     thread_sandbox: danger-full-access
     turn_sandbox_policy:
@@ -149,9 +153,9 @@ Instructions:
    Base the working branch on the work item development base above. Treat that
    explicit work item branch as authoritative for implementation; it is not a
    conflict with the final integration branch.
-3. The repository hosting service is only a Git SSH remote. Do not invoke any
-   hosting-platform API or create, update, review, approve, check, land, close,
-   or merge a change proposal.
+3. The only allowed hosting API action is the inventory-listed, read-only
+   `repo_remote_search` tool. Do not call GitLab directly or create, update,
+   review, approve, check, land, close, or merge a change proposal.
 4. Work only in `repo/`. The sole normal workspace-root artifact you may update
    is `.symphony-tapd-workpad.md`.
 5. Final output must report completed actions and blockers only.

@@ -150,6 +150,14 @@ defmodule SymphonyElixir.RepoProvider do
     ToolExecutor.execute(Config.new(repo), tool, arguments, opts)
   end
 
+  @spec code_search(keyword()) :: result(map())
+  def code_search(opts \\ [])
+  def code_search(opts) when is_list(opts), do: call_optional(:code_search, [opts], :unsupported)
+
+  @spec code_search(repo_config() | map(), keyword()) :: result(map())
+  def code_search(repo, opts) when is_map(repo) and is_list(opts),
+    do: call_optional(repo, :code_search, [opts], :unsupported)
+
   @spec auth_status(keyword()) :: result(String.t())
   def auth_status(opts \\ [])
   def auth_status(opts) when is_list(opts), do: call_optional(:auth_status, [opts], :unsupported)

@@ -12,6 +12,7 @@ defmodule SymphonyElixir.Repo.Capabilities do
   @diff "repo.diff"
   @commit "repo.commit"
   @push "repo.push"
+  @sparse_add "repo.sparse_add"
 
   @spec checkout() :: String.t()
   def checkout, do: @checkout
@@ -25,6 +26,9 @@ defmodule SymphonyElixir.Repo.Capabilities do
   @spec push() :: String.t()
   def push, do: @push
 
+  @spec sparse_add() :: String.t()
+  def sparse_add, do: @sparse_add
+
   @impl true
   def capabilities, do: core()
 
@@ -37,7 +41,8 @@ defmodule SymphonyElixir.Repo.Capabilities do
       checkout(),
       diff(),
       commit(),
-      push()
+      push(),
+      sparse_add()
     ]
   end
 end

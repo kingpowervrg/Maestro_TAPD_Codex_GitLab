@@ -744,6 +744,7 @@ Production CI should also require:
 | `linear/github/codex` | Linear + GitHub + Codex | `SYMPHONY_CODEX_TEMPLATE` or `SYMPHONY_WORKFLOW_PATH`, `LINEAR_API_KEY`, `LINEAR_PROJECT_SLUG`, `SOURCE_REPO_URL`, `SOURCE_REPO_BASE_BRANCH`, `GH_TOKEN` or `GITHUB_TOKEN`, `OPENAI_API_KEY`; use `compose.integration.yml --profile codex` / `runtime-agent-codex` |
 | `linear/github/claude_code` | Linear + GitHub + Claude Code | `SYMPHONY_CLAUDE_CODE_TEMPLATE` or `SYMPHONY_WORKFLOW_PATH`, `LINEAR_API_KEY`, `LINEAR_PROJECT_SLUG`, `SOURCE_REPO_URL`, `SOURCE_REPO_BASE_BRANCH`, `GH_TOKEN` or `GITHUB_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`; use `compose.integration.yml --profile claude-code` / `runtime-agent-claude-code` |
 | `tapd/cnb/codebuddy_code` | TAPD + CNB + CodeBuddy Code | `SYMPHONY_CODEBUDDY_TEMPLATE` or `SYMPHONY_WORKFLOW_PATH`, `TAPD_API_USER`, `TAPD_API_PASSWORD`, `TAPD_WORKSPACE_ID`, `CNB_TOKEN`, `SOURCE_REPO_URL`, `CODEBUDDY_API_KEY`; use `compose.integration.yml --profile codebuddy` / `runtime-agent-codebuddy`; managed credential preflight runs automatically by default |
+| `tapd/git/codex` | TAPD + GitLab search + Git push + Codex | `SYMPHONY_CODEX_TEMPLATE=tapd/git/codex`, TAPD variables, `SOURCE_REPO_URL`, `SOURCE_REPO_BASE_BRANCH`, `SOURCE_REPO_BRANCH_WORK_PREFIX`, `GITLAB_API_TOKEN`, `OPENAI_API_KEY`; GitLab API URL and project are inferred from the clone URL by default |
 
 ### Common Variables
 
@@ -788,6 +789,9 @@ Production CI should also require:
 | `SOURCE_REPO_BRANCH_WORK_PREFIX` | Optional work branch prefix; the quickstart examples use `maestro/`. |
 | `SOURCE_REPO_PROVIDER_REPOSITORY` | Optional explicit provider repository name, such as GitHub `<owner>/<repo>`. |
 | `SOURCE_REPO_PROVIDER_REQUIRED_PR_LABEL` | Optional GitHub PR label enforcement. |
+| `GITLAB_API_TOKEN` | GitLab token with `read_api` scope for `repo_remote_search`; keep it in the Maestro service environment. |
+| `GITLAB_API_BASE_URL` | Optional GitLab API v4 base URL override. |
+| `GITLAB_PROJECT_ID` | Optional numeric project ID or `group/project` override. |
 | `GH_TOKEN` | GitHub token. Use either `GH_TOKEN` or `GITHUB_TOKEN`; setting only one avoids confusion. |
 | `GITHUB_TOKEN` | GitHub token. Use either `GH_TOKEN` or `GITHUB_TOKEN`; setting only one avoids confusion. |
 | `CNB_TOKEN` | CNB token. |

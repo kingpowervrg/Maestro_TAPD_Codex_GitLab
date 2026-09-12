@@ -67,6 +67,7 @@ defmodule SymphonyElixir.RepoProvider.Adapter do
           | :pr_close
           | :pr_merge
           | :pr_checks
+          | :code_search
           | :api
           | :run_list
           | :run_view
@@ -88,6 +89,7 @@ defmodule SymphonyElixir.RepoProvider.Adapter do
     pr_close: 2,
     pr_merge: 2,
     pr_checks: 2,
+    code_search: 2,
     api: 2,
     run_list: 2,
     run_view: 2,
@@ -120,6 +122,10 @@ defmodule SymphonyElixir.RepoProvider.Adapter do
   @callback pr_close(Config.t(), keyword()) :: result(String.t())
   @callback pr_merge(Config.t(), keyword()) :: result(String.t())
   @callback pr_checks(Config.t(), keyword()) :: result(list(map()))
+
+  # ── Repository content ──────────────────────────────────────────
+
+  @callback code_search(Config.t(), keyword()) :: result(map())
 
   # ── API & CI ─────────────────────────────────────────────────────
 
@@ -155,6 +161,7 @@ defmodule SymphonyElixir.RepoProvider.Adapter do
     pr_close: 2,
     pr_merge: 2,
     pr_checks: 2,
+    code_search: 2,
     api: 2,
     run_list: 2,
     run_view: 2,

@@ -27,13 +27,15 @@ defmodule SymphonyElixir.RepoDynamicToolTest do
                "repo_checkout",
                "repo_diff",
                "repo_commit",
-               "repo_push"
+               "repo_push",
+               "repo_sparse_add"
              ])
 
     assert tool_metadata["repo_checkout"]["capability"] == "repo.checkout"
     assert tool_metadata["repo_checkout"]["sourceKind"] == "repo"
     assert tool_metadata["repo_checkout"]["sideEffect"] == "write"
     assert tool_metadata["repo_diff"]["sideEffect"] == "read_only"
+    assert tool_metadata["repo_sparse_add"]["capability"] == "repo.sparse_add"
 
     assert tool_specs
            |> Enum.find(&(&1["name"] == "repo_commit"))
@@ -44,14 +46,16 @@ defmodule SymphonyElixir.RepoDynamicToolTest do
                "repo.checkout",
                "repo.diff",
                "repo.commit",
-               "repo.push"
+               "repo.push",
+               "repo.sparse_add"
              ])
 
     assert Enum.map(resolved, & &1.tool) == [
              "repo_checkout",
              "repo_diff",
              "repo_commit",
-             "repo_push"
+             "repo_push",
+             "repo_sparse_add"
            ]
   end
 
@@ -218,6 +222,43 @@ defmodule SymphonyElixir.RepoDynamicToolTest do
              DynamicTool.execute(context, "repo_commit", %{})
   end
 
+  test "repo sparse add materializes only validated target directories" do
+    %{repo_path: repo_path} = setup_git_repo!()
+    run!("git", ["-C", repo_path, "sparse-checkout", "init", "--cone", "--sparse-index"])
+
+    target_file = Path.join(repo_path, "src/game/example.ex")
+    refute File.exists?(target_file)
+
+    context = repo_tool_context(repo_config(repo_path))
+
+    assert {:success,
+            %{
+              "data" => %{
+                "action" => "sparse_paths_added",
+                "paths" => ["src/game"],
+                "ref" => "HEAD"
+              }
+            }} =
+             DynamicTool.execute(context, "repo_sparse_add", %{
+               "paths" => ["src/game"]
+             })
+
+    assert File.read!(target_file) == "defmodule Example do\nend\n"
+
+    assert {:failure,
+            %{
+              "error" => %{
+                "code" => "invalid_invocation",
+                "message" => message
+              }
+            }} =
+             DynamicTool.execute(context, "repo_sparse_add", %{
+               "paths" => ["../src"]
+             })
+
+    assert message =~ "safe repository-relative directory"
+  end
+
   defp repo_tool_context(repo) do
     DynamicTool.capture_context(dynamic_tool_sources: [{SymphonyElixir.Repo.DynamicToolSource, repo}])
   end
@@ -246,7 +287,9 @@ defmodule SymphonyElixir.RepoDynamicToolTest do
     run!("git", ["-C", repo_path, "config", "user.name", "Repo Tool Test"])
 
     File.write!(Path.join(repo_path, "README.md"), "# Repo Tool Test\n")
-    run!("git", ["-C", repo_path, "add", "README.md"])
+    File.mkdir_p!(Path.join(repo_path, "src/game"))
+    File.write!(Path.join(repo_path, "src/game/example.ex"), "defmodule Example do\nend\n")
+    run!("git", ["-C", repo_path, "add", "README.md", "src/game/example.ex"])
     run!("git", ["-C", repo_path, "commit", "-m", "Initial commit"])
     run!("git", ["-C", repo_path, "push", "-u", "origin", "master"])
 

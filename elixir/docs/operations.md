@@ -123,6 +123,15 @@ CNB:
 export CNB_TOKEN=...
 ```
 
+GitLab read-only code search (`tapd/git/codex`):
+
+```bash
+export GITLAB_API_TOKEN=... # read_api scope
+# Optional for non-standard installations; otherwise inferred from SOURCE_REPO_URL.
+export GITLAB_API_BASE_URL=https://gitlab.example.com/api/v4
+export GITLAB_PROJECT_ID=group/repository
+```
+
 Repository inputs:
 
 ```bash
@@ -140,6 +149,11 @@ create its Story-specific working branch from it. If the line is absent or
 invalid, the configured integration branch is the fallback. Automation never
 pushes either base directly; after validation it pushes the working branch and
 hands the Story to human review.
+
+Keep `GITLAB_API_TOKEN` in the ignored `.env.gitlab.local` file with mode
+`0600`. The launcher requires it, while the workflow excludes it from Codex
+shell environments. Only Maestro's `repo_remote_search` request uses it; the
+agent must never make direct token-bearing GitLab calls.
 
 Use least-privilege credentials when possible. Avoid using high-privilege personal tokens for long-running unattended operation.
 
