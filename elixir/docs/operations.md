@@ -150,10 +150,15 @@ invalid, the configured integration branch is the fallback. Automation never
 pushes either base directly; after validation it pushes the working branch and
 hands the Story to human review.
 
-Keep `GITLAB_API_TOKEN` in the ignored `.env.gitlab.local` file with mode
-`0600`. The launcher requires it, while the workflow excludes it from Codex
+Keep `GITLAB_API_TOKEN` and TAPD credentials in the external
+`/home/admin2/workspace_other/Env/symphony/tapd-gitlab.env` file with mode
+`0600` (override with `SYMPHONY_TAPD_GITLAB_ENV_FILE` for another path). The
+launcher requires it, while the workflow excludes the GitLab token from Codex
 shell environments. Only Maestro's `repo_remote_search` request uses it; the
-agent must never make direct token-bearing GitLab calls.
+agent must never make direct token-bearing GitLab calls. The ignored
+`.env.gitlab.local` may contain `SYMPHONY_TAPD_GITLAB_ENV_FILE` to point the
+launcher at the external file; credentials should remain in that external
+file.
 
 Use least-privilege credentials when possible. Avoid using high-privilege personal tokens for long-running unattended operation.
 

@@ -193,7 +193,23 @@ defmodule SymphonyElixir.Orchestrator.WorkerExit do
             )
 
           :schedule_retry ->
-            schedule_failure_retry(state, issue_id, running_entry, reason)
+            # Provider errors marked non-retryable (for example Codex quota
+            # exhaustion) must not be retried merely because the TAPD issue is
+            # still active.  Doing so creates an unbounded five-minute retry
+            # loop and consumes the remaining quota while no work can run.
+            if non_retryable_provider_failure?(issue_id, running_entry) do
+              suppress_retry_after_handoff(
+                state,
+                issue_id,
+                running_entry,
+                reason,
+                Map.get(running_entry, :issue),
+                "non_retryable_agent_provider_error",
+                opts
+              )
+            else
+              schedule_failure_retry(state, issue_id, running_entry, reason)
+            end
         end
     end
   end
@@ -491,6 +507,25 @@ defmodule SymphonyElixir.Orchestrator.WorkerExit do
         (is_nil(run_id) or event["run_id"] == run_id)
     end)
   end
+
+  defp non_retryable_provider_failure?(issue_id, running_entry) do
+    run_id = Map.get(running_entry, :run_id)
+
+    %{issue_id: issue_id, run_id: run_id}
+    |> EventStore.recent_issue_events(limit: 100)
+    |> Enum.any?(fn event ->
+      event["event"] in ["codex_turn_failed", "agent_turn_failed", "codex_session_failed"] and
+        (event["retryable"] == false or quota_error_event?(event)) and
+        (is_nil(run_id) or event["run_id"] == run_id or event["correlation_id"] == run_id)
+    end)
+  end
+
+  defp quota_error_event?(event) when is_map(event) do
+    error = event["error"]
+    is_binary(error) and String.contains?(error, "usageLimitExceeded")
+  end
+
+  defp quota_error_event?(_event), do: false
 
   defp retryable_running_issue?(issue, dispatch_context) do
     Dispatch.issue_routable_to_worker?(issue) and

@@ -6,6 +6,7 @@ defmodule SymphonyElixir.Config do
   alias SymphonyElixir.AgentProvider
   alias SymphonyElixir.Config.Capabilities, as: ConfigCapabilities
   alias SymphonyElixir.Config.Schema
+  alias SymphonyElixir.Config.TapdGitCodexCapabilities
   alias SymphonyElixir.Config.TypedToolCapabilities
   alias SymphonyElixir.RepoProvider
   alias SymphonyElixir.RepoProvider.Error, as: RepoProviderError
@@ -162,7 +163,8 @@ defmodule SymphonyElixir.Config do
                  settings,
                  ConfigCapabilities.available_capabilities(settings)
                ),
-             :ok <- TypedToolCapabilities.validate_required(settings) do
+             :ok <- TypedToolCapabilities.validate_required(settings),
+             :ok <- TapdGitCodexCapabilities.validate_required(settings) do
           :ok
         end
     end
