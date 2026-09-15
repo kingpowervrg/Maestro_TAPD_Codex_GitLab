@@ -84,7 +84,10 @@ defmodule SymphonyElixir.Tracker.Tapd.Normalizer do
         "ai_special_workflow" => ai_workflow_value
       },
       workflow: workflow,
-      assigned_to_worker: assigned_to_worker?(assignees, assignee_filter) and BugAIWorkflow.accepted?(bug, tracker),
+      assigned_to_worker:
+        assigned_to_worker?(assignees, assignee_filter) and
+          BugAIWorkflow.accepted?(bug, tracker) and
+          not BugAIWorkflow.exception?(bug, tracker),
       created_at: parse_datetime(string_field(bug, "created")),
       updated_at: parse_datetime(string_field(bug, "modified") || string_field(bug, "updated"))
     }

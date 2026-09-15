@@ -3,7 +3,7 @@ implementation route is `developing`; `review`, `merging`, and terminal states
 are human-owned or stopped states and are deliberately absent from
 `tracker.lifecycle.active_states`.
 
-1. Read the {% if issue.entity_type == "bug" %}Bug{% else %}Story{% endif %} through `tracker.issue_snapshot` and read or create exactly
+1. Read the {% if issue.entity_type == "bug" %}Bug{% else %}Story{% endif %} through `tracker.issue_snapshot` with comments included. {% if issue.entity_type == "bug" %}Before any other action, inspect every existing `### Confusions` entry and verify whether each described problem still exists. Do not treat the mere presence of historical Confusions as a blocker. If any problem still exists, record the complete current Confusions evidence in the canonical workpad and stop; Maestro sets `AI特殊工作流` to `AI异常`. If every problem is gone, mark each corresponding Confusions entry resolved in the workpad (for example `- [x] ... — resolved: <evidence>`) and continue the normal workflow. Never use the deleted `AI是否遇到异常` field.{% endif %} Read or create exactly
    one canonical workpad through `tracker.upsert_workpad`. Keep its full body
    mirrored in workspace-root `.symphony-tapd-workpad.md`; never put that file
    under `repo/` or commit it. {% if issue.entity_type == "bug" %}Pass `entity_type: "bug"` whenever creating a workpad or general comment.{% endif %}

@@ -17,7 +17,7 @@ defmodule SymphonyElixir.Tracker.Tapd.Adapter do
   alias SymphonyElixir.Tracker.Kinds
   alias SymphonyElixir.Tracker.ProjectRef
   alias SymphonyElixir.Tracker.StatePrecondition
-  alias SymphonyElixir.Tracker.Tapd.{Client, ConfigValidator, ToolExecutor, WorkspacePreparation}
+  alias SymphonyElixir.Tracker.Tapd.{BugAIWorkflow, Client, ConfigValidator, ToolExecutor, WorkspacePreparation}
   alias SymphonyElixir.Tracker.Tapd.Client.Paths
 
   @provider_kind Kinds.tapd()
@@ -167,6 +167,27 @@ defmodule SymphonyElixir.Tracker.Tapd.Adapter do
       when is_map(tracker) and is_binary(issue_id) and is_binary(state_name) do
     with :ok <- confirm_expected_current_state(tracker, issue_id, opts) do
       Client.update_story_status(issue_id, state_name, Keyword.put(opts, :tracker, tracker))
+    end
+  end
+
+  @spec mark_ai_workflow_exception(TrackerConfig.t(), String.t(), keyword()) :: :ok | {:error, term()}
+  def mark_ai_workflow_exception(tracker, issue_id, opts \\ [])
+      when is_map(tracker) and is_binary(issue_id) and is_list(opts) do
+    case BugAIWorkflow.field(tracker) do
+      field when is_binary(field) ->
+        params = %{"id" => issue_id, field => BugAIWorkflow.exception_value(tracker)}
+
+        with {:ok, response} <-
+               Client.Request.request("POST", Paths.bugs(), params,
+                 tracker: tracker,
+                 request_fun: Keyword.get(opts, :request_fun, &Client.Request.default_request/1)
+               ),
+             {:ok, _data} <- Client.Response.decode_success_envelope(Paths.bugs(), response) do
+          :ok
+        end
+
+      _field ->
+        {:error, :bug_ai_workflow_not_configured}
     end
   end
 

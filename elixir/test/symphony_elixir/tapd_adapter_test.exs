@@ -756,6 +756,37 @@ defmodule SymphonyElixir.TapdAdapterTest do
                      }}
   end
 
+  test "mark_ai_workflow_exception writes the configured AI exception value" do
+    tracker = %{
+      kind: "tapd",
+      endpoint: "https://api.tapd.cn",
+      auth: %{api_key: "tapd-user", api_secret: "tapd-secret"},
+      provider: %{
+        "platform" => %{
+          "workspace_id" => "53000000",
+          "bug_ai_workflow" => %{"field" => "custom_field_6"}
+        }
+      },
+      lifecycle: %{}
+    }
+
+    assert :ok =
+             SymphonyElixir.Tracker.Tapd.Adapter.mark_ai_workflow_exception(tracker, "1153000000000000100",
+               request_fun: fn request ->
+                 assert request.method == "POST"
+                 assert request.url == "https://api.tapd.cn/bugs"
+
+                 assert request.params == %{
+                          "id" => "1153000000000000100",
+                          "custom_field_6" => "AI异常",
+                          "workspace_id" => "53000000"
+                        }
+
+                 {:ok, %{status: 200, body: %{"status" => 1, "data" => %{"Bug" => %{}}}}}
+               end
+             )
+  end
+
   test "tapd_upsert_workpad creates Bug comments with the Bug entry type" do
     write_workflow_file!(Workflow.workflow_file_path(), tapd_typed_tool_workflow_config())
     test_pid = self()

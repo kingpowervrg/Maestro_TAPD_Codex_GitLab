@@ -13,6 +13,7 @@ defmodule SymphonyElixir.Orchestrator.WorkerExit do
   alias SymphonyElixir.Orchestrator.RunningState
   alias SymphonyElixir.Orchestrator.Runtime
   alias SymphonyElixir.Orchestrator.State
+  alias SymphonyElixir.Tracker
   alias SymphonyWorkerDaemon.Session.Status, as: WorkerSessionStatus
 
   @default_issue_refresh_timeout_ms 2_000
@@ -162,61 +163,78 @@ defmodule SymphonyElixir.Orchestrator.WorkerExit do
   end
 
   defp handle_exit_reason(state, issue_id, running_entry, :normal, opts) do
-    case non_retryable_typed_tool_blocker(issue_id, running_entry) do
-      %{} = blocker ->
-        suppress_retry_after_typed_tool_blocker(state, issue_id, running_entry, :normal, blocker)
+    cond do
+      confusion_detected?(issue_id, running_entry, :normal) ->
+        suppress_retry_after_confusion(state, issue_id, running_entry, :normal, opts)
 
-      nil ->
-        running_entry = refresh_exit_issue_state(state, issue_id, running_entry, opts)
-        continue_after_normal_exit(state, issue_id, running_entry, opts)
-    end
-  end
+      true ->
+        case non_retryable_typed_tool_blocker(issue_id, running_entry) do
+          %{} = blocker ->
+            suppress_retry_after_typed_tool_blocker(state, issue_id, running_entry, :normal, blocker, opts)
 
-  defp handle_exit_reason(state, issue_id, running_entry, reason, opts) do
-    case non_retryable_typed_tool_blocker(issue_id, running_entry) do
-      %{} = blocker ->
-        suppress_retry_after_typed_tool_blocker(state, issue_id, running_entry, reason, blocker)
-
-      nil ->
-        running_entry = refresh_exit_issue_state(state, issue_id, running_entry, opts)
-
-        case retry_suppression_decision(issue_id, running_entry) do
-          {:suppress, refreshed_issue, skip_reason} ->
-            suppress_retry_after_handoff(
-              state,
-              issue_id,
-              running_entry,
-              reason,
-              refreshed_issue,
-              skip_reason,
-              opts
-            )
-
-          :schedule_retry ->
-            # Provider errors marked non-retryable (for example Codex quota
-            # exhaustion) must not be retried merely because the TAPD issue is
-            # still active.  Doing so creates an unbounded five-minute retry
-            # loop and consumes the remaining quota while no work can run.
-            if non_retryable_provider_failure?(issue_id, running_entry) do
-              suppress_retry_after_handoff(
-                state,
-                issue_id,
-                running_entry,
-                reason,
-                Map.get(running_entry, :issue),
-                "non_retryable_agent_provider_error",
-                opts
-              )
-            else
-              schedule_failure_retry(state, issue_id, running_entry, reason)
-            end
+          nil ->
+            running_entry = refresh_exit_issue_state(state, issue_id, running_entry, opts)
+            continue_after_normal_exit(state, issue_id, running_entry, opts)
         end
     end
   end
 
-  defp suppress_retry_after_typed_tool_blocker(state, issue_id, running_entry, reason, blocker) do
+  defp handle_exit_reason(state, issue_id, running_entry, reason, opts) do
+    cond do
+      confusion_detected?(issue_id, running_entry, reason) ->
+        suppress_retry_after_confusion(state, issue_id, running_entry, reason, opts)
+
+      true ->
+        case non_retryable_typed_tool_blocker(issue_id, running_entry) do
+          blocker when is_map(blocker) ->
+            suppress_retry_after_typed_tool_blocker(state, issue_id, running_entry, reason, blocker, opts)
+
+          _ ->
+            continue_after_failure_exit(state, issue_id, running_entry, reason, opts)
+        end
+    end
+  end
+
+  defp continue_after_failure_exit(state, issue_id, running_entry, reason, opts) do
+    running_entry = refresh_exit_issue_state(state, issue_id, running_entry, opts)
+
+    case retry_suppression_decision(issue_id, running_entry) do
+      {:suppress, refreshed_issue, skip_reason} ->
+        suppress_retry_after_handoff(
+          state,
+          issue_id,
+          running_entry,
+          reason,
+          refreshed_issue,
+          skip_reason,
+          opts
+        )
+
+      :schedule_retry ->
+        # Provider errors marked non-retryable (for example Codex quota
+        # exhaustion) must not be retried merely because the TAPD issue is
+        # still active.  Doing so creates an unbounded five-minute retry
+        # loop and consumes the remaining quota while no work can run.
+        if non_retryable_provider_failure?(issue_id, running_entry) do
+          suppress_retry_after_handoff(
+            state,
+            issue_id,
+            running_entry,
+            reason,
+            Map.get(running_entry, :issue),
+            "non_retryable_agent_provider_error",
+            opts
+          )
+        else
+          schedule_failure_retry(state, issue_id, running_entry, reason)
+        end
+    end
+  end
+
+  defp suppress_retry_after_typed_tool_blocker(state, issue_id, running_entry, reason, blocker, opts) do
     issue = Map.get(running_entry, :issue)
     register_typed_tool_blocker(issue_id, running_entry, blocker)
+    mark_tapd_bug_ai_exception(issue, issue_id, running_entry, reason, opts)
 
     Events.emit_issue_worker_finished(
       state,
@@ -256,6 +274,93 @@ defmodule SymphonyElixir.Orchestrator.WorkerExit do
 
     complete_issue(state, issue_id)
   end
+
+  defp mark_tapd_bug_ai_exception(%Issue{entity_type: "bug"} = issue, issue_id, running_entry, reason, opts) do
+    mark_exception = Keyword.get(opts, :mark_ai_workflow_exception, &Tracker.mark_ai_workflow_exception/1)
+
+    case mark_exception.(issue_id) do
+      :ok ->
+        Events.emit(:warning, :tapd_bug_ai_workflow_exception, issue, nil, %{
+          issue_id: issue_id,
+          issue_identifier: Map.get(running_entry, :identifier),
+          run_id: Map.get(running_entry, :run_id),
+          reason: inspect(reason),
+          ai_workflow_value: "AI异常",
+          message: "tapd_bug_ai_workflow_exception issue_id=#{issue_id}"
+        })
+
+      {:error, update_reason} ->
+        Events.emit(:error, :tapd_bug_ai_workflow_exception_update_failed, issue, nil, %{
+          issue_id: issue_id,
+          issue_identifier: Map.get(running_entry, :identifier),
+          run_id: Map.get(running_entry, :run_id),
+          reason: inspect(reason),
+          error: inspect(update_reason),
+          message: "tapd_bug_ai_workflow_exception_update_failed issue_id=#{issue_id} error=#{inspect(update_reason)}"
+        })
+
+      _other ->
+        :ok
+    end
+  end
+
+  defp mark_tapd_bug_ai_exception(_issue, _issue_id, _running_entry, _reason, _opts), do: :ok
+
+  defp suppress_retry_after_confusion(state, issue_id, running_entry, reason, opts) do
+    issue = Map.get(running_entry, :issue)
+    mark_tapd_bug_ai_exception(issue, issue_id, running_entry, reason, opts)
+
+    Events.emit_issue_worker_finished(
+      state,
+      issue_id,
+      running_entry,
+      reason,
+      WorkerSessionStatus.exited(),
+      ResultSummary.retry_suppressed_blocked()
+    )
+
+    Events.emit(:warning, :agent_run_retry_suppressed, issue, state, %{
+      issue_id: issue_id,
+      issue_identifier: Map.get(running_entry, :identifier),
+      run_id: Map.get(running_entry, :run_id),
+      skip_reason: "confusions",
+      result_summary: ResultSummary.retry_suppressed_blocked(),
+      error: inspect(reason),
+      message: "agent_run_retry_suppressed issue_id=#{issue_id} skip_reason=confusions"
+    })
+
+    complete_issue(state, issue_id)
+  end
+
+  defp confusion_detected?(issue_id, running_entry, reason),
+    do: confusion_reason?(reason) or confusion_event?(issue_id, running_entry)
+
+  defp confusion_reason?(reason) do
+    reason
+    |> inspect()
+    |> String.downcase()
+    |> String.contains?("confusion")
+  end
+
+  defp confusion_event?(issue_id, running_entry) do
+    run_id = Map.get(running_entry, :run_id)
+
+    %{issue_id: issue_id, run_id: run_id}
+    |> EventStore.recent_issue_events(limit: 100)
+    |> Enum.any?(fn event ->
+      (is_nil(run_id) or event["run_id"] == run_id or event["correlation_id"] == run_id) and
+        contains_confusion?(event)
+    end)
+  end
+
+  defp contains_confusion?(value) when is_binary(value),
+    do: String.contains?(String.downcase(value), "confusion")
+
+  defp contains_confusion?(value) when is_map(value),
+    do: Enum.any?(value, fn {key, nested} -> contains_confusion?(key) or contains_confusion?(nested) end)
+
+  defp contains_confusion?(value) when is_list(value), do: Enum.any?(value, &contains_confusion?/1)
+  defp contains_confusion?(_value), do: false
 
   defp register_typed_tool_blocker(issue_id, running_entry, blocker) do
     attrs = %{

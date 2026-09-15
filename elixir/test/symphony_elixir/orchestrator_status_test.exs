@@ -1493,6 +1493,55 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
     assert MapSet.member?(final_state.completed, issue_id)
   end
 
+  test "confusions stop a TAPD Bug and mark its AI workflow as exceptional" do
+    issue_id = "1153000000000000100"
+    ref = make_ref()
+    parent = self()
+
+    issue = %Issue{
+      id: issue_id,
+      identifier: "TAPD-#{issue_id}",
+      entity_type: "bug",
+      state: "reopened",
+      custom_fields: %{"AI特殊工作流" => "接受/处理"}
+    }
+
+    running_entry = %{
+      pid: self(),
+      ref: ref,
+      run_id: "run-confusions",
+      identifier: issue.identifier,
+      issue: issue,
+      worker_host: nil,
+      workspace_path: nil,
+      session_id: "session-confusions",
+      agent_provider_kind: "codex",
+      failure_class: nil,
+      started_at: DateTime.utc_now()
+    }
+
+    state =
+      SymphonyElixir.Orchestrator.State.initial()
+      |> Map.put(:running, %{issue_id => running_entry})
+      |> Map.put(:claimed, MapSet.new([issue_id]))
+
+    assert {:noreply, final_state} =
+             SymphonyElixir.Orchestrator.WorkerExit.handle_down_message(
+               state,
+               ref,
+               {:confusions, "required typed tools are unavailable"},
+               mark_ai_workflow_exception: fn ^issue_id ->
+                 send(parent, :ai_exception_marked)
+                 :ok
+               end
+             )
+
+    assert_received :ai_exception_marked
+    assert MapSet.member?(final_state.completed, issue_id)
+    refute Map.has_key?(final_state.retry_attempts, issue_id)
+    refute Map.has_key?(final_state.running, issue_id)
+  end
+
   test "normal worker exit refreshes stale running issue before scheduling continuation" do
     issue_id = "issue-stale-terminal-normal-exit"
     ref = make_ref()

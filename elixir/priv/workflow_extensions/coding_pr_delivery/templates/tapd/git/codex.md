@@ -22,6 +22,7 @@ tracker:
         field: $TAPD_BUG_AI_WORKFLOW_FIELD
         accepted_value: 接受/处理
         resolved_value: AI已解决
+        exception_value: AI异常
         active_states: [new, reopened]
   lifecycle:
     active_states:

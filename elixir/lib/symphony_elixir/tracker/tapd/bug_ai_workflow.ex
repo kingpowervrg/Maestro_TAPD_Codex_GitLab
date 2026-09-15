@@ -8,6 +8,7 @@ defmodule SymphonyElixir.Tracker.Tapd.BugAIWorkflow do
   @default_active_states ["new", "reopened"]
   @default_accepted_value "接受/处理"
   @default_resolved_value "AI已解决"
+  @default_exception_value "AI异常"
 
   @spec enabled?(map()) :: boolean()
   def enabled?(tracker) when is_map(tracker), do: is_binary(field(tracker))
@@ -38,6 +39,10 @@ defmodule SymphonyElixir.Tracker.Tapd.BugAIWorkflow do
   def resolved_value(tracker) when is_map(tracker),
     do: config_string(tracker, "resolved_value") || @default_resolved_value
 
+  @spec exception_value(map()) :: String.t()
+  def exception_value(tracker) when is_map(tracker),
+    do: config_string(tracker, "exception_value") || @default_exception_value
+
   @spec active_states(map()) :: [String.t()]
   def active_states(tracker) when is_map(tracker) do
     case map_field(config(tracker), "active_states") do
@@ -65,6 +70,11 @@ defmodule SymphonyElixir.Tracker.Tapd.BugAIWorkflow do
   def resolved?(bug, tracker) when is_map(bug) and is_map(tracker) do
     value(bug, tracker) == resolved_value(tracker)
   end
+
+  @doc "Returns whether the Bug is marked as having encountered an AI exception."
+  @spec exception?(map(), map()) :: boolean()
+  def exception?(bug, tracker) when is_map(bug) and is_map(tracker),
+    do: value(bug, tracker) == exception_value(tracker)
 
   @spec value(map(), map()) :: String.t() | nil
   def value(bug, tracker) when is_map(bug) and is_map(tracker) do

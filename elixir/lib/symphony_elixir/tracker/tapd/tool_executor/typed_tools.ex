@@ -1453,7 +1453,7 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
   defp comment_entry_type("bug"), do: "bug"
   defp comment_entry_type(_entity_type), do: "stories"
 
-  defp comment_read_entry_type("bug"), do: "bug|bug_remark"
+  defp comment_read_entry_type("bug"), do: "bug"
   defp comment_read_entry_type(entity_type), do: comment_entry_type(entity_type)
 
   defp success_payload(payload) when is_map(payload), do: payload

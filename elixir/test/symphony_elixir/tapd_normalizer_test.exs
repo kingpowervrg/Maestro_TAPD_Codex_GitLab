@@ -1,7 +1,32 @@
 defmodule SymphonyElixir.TapdNormalizerTest do
   use SymphonyElixir.TestSupport
 
-  alias SymphonyElixir.Tracker.Tapd.Normalizer
+  alias SymphonyElixir.Tracker.Tapd.{BugAIWorkflow, Normalizer}
+
+  test "recognizes AI exception workflow value and keeps the Bug out of dispatch" do
+    tracker = %{
+      "provider" => %{
+        "platform" => %{
+          "bug_ai_workflow" => %{"field" => "custom_field_6"}
+        }
+      }
+    }
+
+    bug = %{
+      "id" => "bug-1",
+      "title" => "Interrupted repair",
+      "status" => "reopened",
+      "current_owner" => "王权;",
+      "custom_field_6" => "AI异常"
+    }
+
+    issue = Normalizer.normalize_bug(bug, tracker)
+
+    assert BugAIWorkflow.exception?(bug, tracker)
+    assert BugAIWorkflow.exception_value(tracker) == "AI异常"
+    refute issue.assigned_to_worker
+    assert issue.custom_fields["AI特殊工作流"] == "AI异常"
+  end
 
   test "normalizes a TAPD story into the shared issue shape" do
     story = %{

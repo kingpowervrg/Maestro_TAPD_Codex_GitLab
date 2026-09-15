@@ -62,6 +62,7 @@ defmodule SymphonyElixir.Orchestrator.ServerOptions do
       fetch_issue_states_by_ids: &Tracker.fetch_issue_states_by_ids/1,
       issue_refresh_timeout_ms: @worker_exit_issue_refresh_timeout_ms,
       issue_fact_freshness_ms: @worker_exit_issue_fact_freshness_ms,
+      mark_ai_workflow_exception: &Tracker.mark_ai_workflow_exception/1,
       cleanup_issue_workspace: &cleanup_issue_workspace/3,
       notify_dashboard: &notify_dashboard/0
     ]

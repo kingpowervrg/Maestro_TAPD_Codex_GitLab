@@ -64,6 +64,9 @@ defmodule SymphonyElixir.Tracker.Adapter do
   @callback update_issue_state(Config.t(), String.t(), String.t(), keyword()) ::
               :ok | {:error, Error.t() | term()}
 
+  @callback mark_ai_workflow_exception(Config.t(), String.t(), keyword()) ::
+              :ok | {:error, Error.t() | term()}
+
   @callback dynamic_tools(Config.t()) :: [map()]
   @callback tool_environment(Config.t()) :: map()
   @callback execute_dynamic_tool(Config.t(), String.t() | nil, term(), keyword()) :: tool_result()
@@ -83,6 +86,7 @@ defmodule SymphonyElixir.Tracker.Adapter do
     normalize_issue_id: 2,
     create_comment: 4,
     update_issue_state: 4,
+    mark_ai_workflow_exception: 3,
     dynamic_tools: 1,
     tool_environment: 1,
     execute_dynamic_tool: 4,

@@ -165,6 +165,16 @@ defmodule SymphonyElixir.Tracker do
   def update_issue_state(%{kind: _} = tracker, issue_id, state_name, opts) when is_binary(issue_id) and is_binary(state_name) and is_list(opts),
     do: call(tracker, :update_issue_state, [issue_id, state_name, opts])
 
+  @spec mark_ai_workflow_exception(String.t(), keyword()) :: :ok | {:error, term()}
+  def mark_ai_workflow_exception(issue_id, opts \\ [])
+      when is_binary(issue_id) and is_list(opts),
+      do: call_optional(:mark_ai_workflow_exception, [issue_id, opts], :ok)
+
+  @spec mark_ai_workflow_exception(tracker_config() | map(), String.t(), keyword()) :: :ok | {:error, term()}
+  def mark_ai_workflow_exception(%{kind: _} = tracker, issue_id, opts)
+      when is_binary(issue_id) and is_list(opts),
+      do: call_optional(tracker, :mark_ai_workflow_exception, [issue_id, opts], :ok)
+
   # ── Tooling ───────────────────────────────────────────────────────
 
   @spec dynamic_tools() :: [map()]
