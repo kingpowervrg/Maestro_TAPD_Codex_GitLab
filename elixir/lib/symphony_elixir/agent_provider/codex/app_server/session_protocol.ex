@@ -7,6 +7,8 @@ defmodule SymphonyElixir.AgentProvider.Codex.AppServer.SessionProtocol do
   @initialize_id 1
   @thread_start_id 2
   @turn_start_id 3
+  @default_reasoning_effort "medium"
+  @supported_reasoning_efforts ~w(low medium high xhigh)
 
   @spec start_session(term(), Path.t(), map(), pos_integer()) :: {:ok, String.t()} | {:error, term()}
   def start_session(port, workspace, session_policies, read_timeout_ms)
@@ -43,6 +45,7 @@ defmodule SymphonyElixir.AgentProvider.Codex.AppServer.SessionProtocol do
         ],
         "cwd" => workspace,
         "title" => "#{issue.identifier}: #{issue.title}",
+        "effort" => reasoning_effort(issue),
         "approvalPolicy" => approval_policy,
         "sandboxPolicy" => turn_sandbox_policy
       }
@@ -53,6 +56,37 @@ defmodule SymphonyElixir.AgentProvider.Codex.AppServer.SessionProtocol do
       other -> other
     end
   end
+
+  @doc false
+  @spec reasoning_effort(map()) :: String.t()
+  def reasoning_effort(issue) when is_map(issue) do
+    issue
+    |> custom_fields()
+    |> map_value("ai_model_level")
+    |> normalize_reasoning_effort()
+  end
+
+  def reasoning_effort(_issue), do: @default_reasoning_effort
+
+  defp custom_fields(issue) do
+    case map_value(issue, "custom_fields") do
+      fields when is_map(fields) -> fields
+      _fields -> %{}
+    end
+  end
+
+  defp normalize_reasoning_effort(value) when is_binary(value) do
+    normalized = value |> String.trim() |> String.downcase()
+    if normalized in @supported_reasoning_efforts, do: normalized, else: @default_reasoning_effort
+  end
+
+  defp normalize_reasoning_effort(_value), do: @default_reasoning_effort
+
+  defp map_value(map, "custom_fields") when is_map(map),
+    do: Map.get(map, "custom_fields") || Map.get(map, :custom_fields)
+
+  defp map_value(map, "ai_model_level") when is_map(map),
+    do: Map.get(map, "ai_model_level") || Map.get(map, :ai_model_level)
 
   defp send_initialize(port, read_timeout_ms) do
     payload = %{
@@ -81,17 +115,21 @@ defmodule SymphonyElixir.AgentProvider.Codex.AppServer.SessionProtocol do
   defp start_thread(
          port,
          workspace,
-         %{approval_policy: approval_policy, thread_sandbox: thread_sandbox},
+         %{approval_policy: approval_policy, model: model, thread_sandbox: thread_sandbox},
          read_timeout_ms
        ) do
-    Protocol.send_message(port, %{
-      "method" => "thread/start",
-      "id" => @thread_start_id,
-      "params" => %{
+    params =
+      %{
         "approvalPolicy" => approval_policy,
         "sandbox" => thread_sandbox,
         "cwd" => workspace
       }
+      |> maybe_put("model", model)
+
+    Protocol.send_message(port, %{
+      "method" => "thread/start",
+      "id" => @thread_start_id,
+      "params" => params
     })
 
     case await_response(port, @thread_start_id, read_timeout_ms) do
@@ -105,6 +143,9 @@ defmodule SymphonyElixir.AgentProvider.Codex.AppServer.SessionProtocol do
         other
     end
   end
+
+  defp maybe_put(map, _key, nil), do: map
+  defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
   defp await_response(port, request_id, read_timeout_ms) do
     with_timeout_response(port, request_id, read_timeout_ms, "")

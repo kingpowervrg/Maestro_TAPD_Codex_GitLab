@@ -85,6 +85,8 @@ export TAPD_WORKSPACE_ID=...
 export TAPD_ASSIGNEE='Your TAPD display name'
 # Optional: enable AI-routed TAPD Bugs in this workspace.
 export TAPD_BUG_AI_WORKFLOW_FIELD=custom_field_6
+export TAPD_BUG_AI_MODEL_LEVEL_FIELD=custom_field_7
+export SYMPHONY_AGENT_MODEL=gpt-5.6-luna
 ```
 
 `tracker.provider.assignee` limits TAPD dispatch to Stories whose `owner`
@@ -107,6 +109,14 @@ ids, appends a rework round to the same workpad, fetches the previously
 published working branch, and continues on that branch. Configure the API field
 key returned by TAPD's Bug custom-field settings endpoint (for example,
 `custom_field_6`), not the display label.
+
+`TAPD_BUG_AI_MODEL_LEVEL_FIELD` selects the Bug custom field used for Codex
+reasoning effort. Supported values are `low`, `medium`, `high`, and `xhigh`.
+Maestro passes the normalized value through the native Codex app-server
+`turn/start.effort` parameter for every turn; an empty or unsupported value
+falls back to `medium`. This does not rewrite the workflow's Codex command.
+`SYMPHONY_AGENT_MODEL` similarly overrides the model through the native
+`thread/start.model` parameter.
 
 Linear:
 

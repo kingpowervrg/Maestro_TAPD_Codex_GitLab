@@ -203,6 +203,8 @@ $env:TAPD_API_PASSWORD="<TAPD API 密码>"
 $env:TAPD_WORKSPACE_ID="<TAPD 项目 ID>"
 $env:TAPD_ASSIGNEE="<允许派发的 TAPD 用户显示名>"
 $env:TAPD_BUG_AI_WORKFLOW_FIELD="custom_field_<实际字段>"
+$env:TAPD_BUG_AI_MODEL_LEVEL_FIELD="custom_field_7"
+$env:SYMPHONY_AGENT_MODEL="gpt-5.6-luna"
 
 $env:SOURCE_REPO_URL="git@gitlab-ee.funplus.io:koa-client-code/koa-client-code.git"
 $env:SOURCE_REPO_BASE_BRANCH="master"
@@ -363,10 +365,11 @@ $env:GITLAB_PROJECT_ID="koa-client-code/koa-client-code"
 - [x] TAPD API 认证健康检查已通过，且通过 `TAPD_ASSIGNEE` 限制派发范围。
 - [x] Story 人工评审状态为 `status_5`，完成状态为 `status_6`；需求主任务还支持 `status_8`。
 - [ ] 配置真实的 `TAPD_BUG_AI_WORKFLOW_FIELD`，并确认字段选项精确包含 `接受/处理`、`AI已解决`、`AI异常`。
+- [x] `TAPD_BUG_AI_MODEL_LEVEL_FIELD=custom_field_7`，字段选项已确认为 `low`、`medium`、`high`、`xhigh`。
 - [ ] 配置最小权限 `GITLAB_API_TOKEN`（`read_api`），并验证目标 GitLab 实例的 blob search 可用。
 - [ ] 正式重启前再次确认启用的工作项类型和历史候选范围，避免批量误触发。
 
-凭证应保存在外部 `0600` 环境文件中，默认路径为 `/home/admin2/workspace_other/Env/symphony/tapd-gitlab.env`；可通过 `SYMPHONY_TAPD_GITLAB_ENV_FILE` 覆盖。`.env.gitlab.local` 只保存外部文件指针或非敏感本地配置，不应承载长期凭证。
+凭证应保存在外部 `0600` 环境文件中，默认路径为 `/home/admin2/workspace_other/Env/symphony/tapd-gitlab.env`；可通过 `SYMPHONY_TAPD_GITLAB_ENV_FILE` 覆盖。`.env.gitlab.local` 只保存外部文件指针或非敏感本地配置，不应承载长期凭证。Codex 模型通过 `SYMPHONY_AGENT_MODEL` 传给原生 `thread/start.model`；`AI模型等级` 通过 `TAPD_BUG_AI_MODEL_LEVEL_FIELD` 读取，按 Bug 分别把 `low`、`medium`、`high`、`xhigh` 传给原生 `turn/start.effort`。字段为空或非法时 effort 使用 `medium`，两项均无需修改核心 workflow 命令。
 
 本地启动命令：`./elixir/bin/start-tapd-gitlab`。
 本地重启命令：`./elixir/bin/restart-tapd-gitlab`。
@@ -412,6 +415,7 @@ $env:GITLAB_PROJECT_ID="koa-client-code/koa-client-code"
 - Repo Provider typed tools：`lib/symphony_elixir/repo_provider/tool_executor.ex`
 - 必需能力启动门禁：`lib/symphony_elixir/config/tapd_git_codex_capabilities.ex`
 - TAPD Bug AI workflow：`lib/symphony_elixir/tracker/tapd/bug_ai_workflow.ex`
+- TAPD Bug AI model level：`lib/symphony_elixir/tracker/tapd/bug_ai_model_level.ex`
 - TAPD typed tools：`lib/symphony_elixir/tracker/tapd/tool_executor/typed_tools.ex`
 - Worker 异常收尾：`lib/symphony_elixir/orchestrator/worker_exit.ex`
 - Git-only 模板：`priv/workflow_extensions/coding_pr_delivery/templates/tapd/git/codex.md`

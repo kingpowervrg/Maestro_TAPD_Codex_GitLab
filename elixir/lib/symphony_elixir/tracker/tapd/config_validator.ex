@@ -12,7 +12,7 @@ defmodule SymphonyElixir.Tracker.Tapd.ConfigValidator do
   alias SymphonyElixir.Tracker.Config, as: TrackerConfig
   alias SymphonyElixir.Tracker.Error
   alias SymphonyElixir.Tracker.Kinds
-  alias SymphonyElixir.Tracker.Tapd.{BugAIWorkflow, WorkflowConfig}
+  alias SymphonyElixir.Tracker.Tapd.{BugAIModelLevel, BugAIWorkflow, WorkflowConfig}
   alias SymphonyElixir.Workflow.Lifecycle, as: WorkflowLifecycle
   alias SymphonyElixir.Workflow.ProfileRegistry
   alias SymphonyElixir.Workflow.Validator, as: WorkflowValidator
@@ -50,6 +50,9 @@ defmodule SymphonyElixir.Tracker.Tapd.ConfigValidator do
 
         invalid_bug_ai_workflow_config?(platform) ->
           {:error, :invalid_tapd_bug_ai_workflow}
+
+        invalid_bug_ai_model_level_config?(platform) ->
+          {:error, :invalid_tapd_bug_ai_model_level}
 
         true ->
           with :ok <- validate_global_state_phase_map(tracker),
@@ -138,6 +141,22 @@ defmodule SymphonyElixir.Tracker.Tapd.ConfigValidator do
         case map_field(config, "field") do
           nil -> false
           field -> not BugAIWorkflow.valid_field?(field)
+        end
+
+      _config ->
+        true
+    end
+  end
+
+  defp invalid_bug_ai_model_level_config?(platform) do
+    case map_field(platform, "bug_ai_model_level") do
+      nil ->
+        false
+
+      config when is_map(config) ->
+        case map_field(config, "field") do
+          nil -> false
+          field -> not BugAIModelLevel.valid_field?(field)
         end
 
       _config ->
@@ -375,6 +394,7 @@ defmodule SymphonyElixir.Tracker.Tapd.ConfigValidator do
               :invalid_tapd_workitem_type_ids,
               :invalid_tapd_comment_author,
               :invalid_tapd_bug_ai_workflow,
+              :invalid_tapd_bug_ai_model_level,
               :conflicting_tapd_workitem_type_scope
             ] do
     config_error(reason, :invalid_configuration, "TAPD configuration is invalid or incomplete.")

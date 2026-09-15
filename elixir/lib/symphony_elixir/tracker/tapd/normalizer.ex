@@ -4,7 +4,7 @@ defmodule SymphonyElixir.Tracker.Tapd.Normalizer do
   """
 
   alias SymphonyElixir.Issue
-  alias SymphonyElixir.Tracker.Tapd.{BugAIWorkflow, StoryBranch}
+  alias SymphonyElixir.Tracker.Tapd.{BugAIModelLevel, BugAIWorkflow, StoryBranch}
   alias SymphonyElixir.Workflow.Lifecycle, as: WorkflowLifecycle
 
   @type assignee_filter ::
@@ -63,6 +63,7 @@ defmodule SymphonyElixir.Tracker.Tapd.Normalizer do
     assignee_filter = Keyword.get(opts, :assignee_filter)
     assignees = bug_assignee_values(bug)
     ai_workflow_value = BugAIWorkflow.value(bug, tracker)
+    ai_model_level = BugAIModelLevel.level(bug, tracker)
 
     %Issue{
       id: bug_id,
@@ -81,7 +82,9 @@ defmodule SymphonyElixir.Tracker.Tapd.Normalizer do
       labels: extract_labels(bug),
       custom_fields: %{
         "AI特殊工作流" => ai_workflow_value,
-        "ai_special_workflow" => ai_workflow_value
+        "ai_special_workflow" => ai_workflow_value,
+        "AI模型等级" => ai_model_level,
+        "ai_model_level" => ai_model_level
       },
       workflow: workflow,
       assigned_to_worker:

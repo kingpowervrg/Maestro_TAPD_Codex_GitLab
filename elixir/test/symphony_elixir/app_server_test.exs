@@ -39,6 +39,22 @@ defmodule SymphonyElixir.AgentProvider.Codex.AppServerTest do
     end
   end
 
+  test "Codex reasoning effort accepts TAPD model levels and defaults to medium" do
+    for level <- ~w(low medium high xhigh) do
+      issue = %Issue{custom_fields: %{"ai_model_level" => level}}
+
+      assert SymphonyElixir.AgentProvider.Codex.AppServer.SessionProtocol.reasoning_effort(issue) ==
+               level
+    end
+
+    assert SymphonyElixir.AgentProvider.Codex.AppServer.SessionProtocol.reasoning_effort(%Issue{}) ==
+             "medium"
+
+    assert SymphonyElixir.AgentProvider.Codex.AppServer.SessionProtocol.reasoning_effort(%Issue{
+             custom_fields: %{"ai_model_level" => "unsupported"}
+           }) == "medium"
+  end
+
   test "stop_session terminates lingering local app-server processes" do
     bash = System.find_executable("bash") || flunk("bash executable is required for this test")
     kill_executable = System.find_executable("kill") || flunk("kill executable is required for this test")
@@ -206,7 +222,8 @@ defmodule SymphonyElixir.AgentProvider.Codex.AppServerTest do
         description: "Ensure runtime startup forwards configured turn sandbox policies unchanged",
         state: "In Progress",
         url: "https://example.org/issues/MT-1001",
-        labels: ["backend"]
+        labels: ["backend"],
+        custom_fields: %{"ai_model_level" => "high"}
       }
 
       policy_cases = [
@@ -223,6 +240,7 @@ defmodule SymphonyElixir.AgentProvider.Codex.AppServerTest do
           workspace_root: workspace_root,
           agent_provider_options: %{
             command: "#{codex_binary} app-server",
+            model: "gpt-5.6-luna",
             turn_sandbox_policy: configured_policy
           }
         )
@@ -244,7 +262,22 @@ defmodule SymphonyElixir.AgentProvider.Codex.AppServerTest do
                    |> String.trim_leading("JSON:")
                    |> Jason.decode!()
                    |> then(fn payload ->
+                     payload["method"] == "thread/start" &&
+                       get_in(payload, ["params", "model"]) == "gpt-5.6-luna"
+                   end)
+                 else
+                   false
+                 end
+               end)
+
+        assert Enum.any?(lines, fn line ->
+                 if String.starts_with?(line, "JSON:") do
+                   line
+                   |> String.trim_leading("JSON:")
+                   |> Jason.decode!()
+                   |> then(fn payload ->
                      payload["method"] == "turn/start" &&
+                       get_in(payload, ["params", "effort"]) == "high" &&
                        get_in(payload, ["params", "sandboxPolicy"]) == configured_policy
                    end)
                  else

@@ -2623,6 +2623,7 @@ defmodule SymphonyElixir.WorkspaceAndConfigTest do
     write_workflow_file!(Workflow.workflow_file_path(),
       agent_provider_options: %{
         command: "codex app-server --model gpt-5.5",
+        model: "gpt-5.6-luna",
         read_timeout_ms: 12_000,
         approval_policy: %{reject: %{sandbox_approval: true}},
         turn_sandbox_policy: explicit_policy
@@ -2634,6 +2635,7 @@ defmodule SymphonyElixir.WorkspaceAndConfigTest do
     assert config.agent_provider.kind == "codex"
     assert config.agent_provider.options["command"] == "codex app-server --model gpt-5.5"
     assert config.agent_provider.options["command_argv"] == nil
+    assert config.agent_provider.options["model"] == "gpt-5.6-luna"
     assert config.agent_provider.options["read_timeout_ms"] == 12_000
     assert config.agent_provider.options["approval_policy"] == %{"reject" => %{"sandbox_approval" => true}}
 
@@ -2650,6 +2652,7 @@ defmodule SymphonyElixir.WorkspaceAndConfigTest do
 
     assert {:ok, runtime_settings} = CodexSettings.runtime_settings()
     assert runtime_settings.approval_policy == %{"reject" => %{"sandbox_approval" => true}}
+    assert runtime_settings.model == "gpt-5.6-luna"
     assert runtime_settings.turn_sandbox_policy == config.agent_provider.options["turn_sandbox_policy"]
 
     write_workflow_file!(Workflow.workflow_file_path(),
@@ -2662,6 +2665,17 @@ defmodule SymphonyElixir.WorkspaceAndConfigTest do
     config = Config.settings!()
     assert config.agent_provider.options["command"] == "codex app-server"
     assert config.agent_provider.options["command_argv"] == ["codex", "app-server", "--model", "gpt 5"]
+  end
+
+  test "Codex model resolves from SYMPHONY_AGENT_MODEL without workflow changes" do
+    previous_model = System.get_env("SYMPHONY_AGENT_MODEL")
+    on_exit(fn -> restore_env("SYMPHONY_AGENT_MODEL", previous_model) end)
+    System.put_env("SYMPHONY_AGENT_MODEL", "gpt-5.6-luna")
+
+    write_workflow_file!(Workflow.workflow_file_path(), agent_provider_options: %{command: "codex app-server"})
+
+    assert Config.settings!().agent_provider.options["model"] == "gpt-5.6-luna"
+    assert CodexSettings.current!().model == "gpt-5.6-luna"
   end
 
   test "agent_provider validates kind and codex option types" do
@@ -3166,6 +3180,23 @@ defmodule SymphonyElixir.WorkspaceAndConfigTest do
              })
 
     assert TrackerConfig.provider(settings.tracker)["assignee"] == "王权"
+  end
+
+  test "TAPD Bug AI model level field resolves from its environment variable" do
+    previous_field = System.get_env("TAPD_BUG_AI_MODEL_LEVEL_FIELD")
+    on_exit(fn -> restore_env("TAPD_BUG_AI_MODEL_LEVEL_FIELD", previous_field) end)
+    System.put_env("TAPD_BUG_AI_MODEL_LEVEL_FIELD", "custom_field_7")
+
+    assert {:ok, settings} =
+             Schema.parse(%{
+               tracker: %{
+                 kind: "tapd",
+                 provider: %{"platform" => %{"workspace_id" => "53000000"}}
+               }
+             })
+
+    assert get_in(TrackerConfig.provider(settings.tracker), ["platform", "bug_ai_model_level", "field"]) ==
+             "custom_field_7"
   end
 
   test "schema resolves sandbox policies from explicit and default workspaces" do

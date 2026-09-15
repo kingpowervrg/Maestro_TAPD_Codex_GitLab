@@ -66,7 +66,10 @@ defmodule SymphonyElixir.Tracker.Tapd.Adapter do
         provider: %{
           assignee: "TAPD_ASSIGNEE",
           platform: %{
-            comment_author: "TAPD_COMMENT_AUTHOR"
+            comment_author: "TAPD_COMMENT_AUTHOR",
+            bug_ai_model_level: %{
+              field: "TAPD_BUG_AI_MODEL_LEVEL_FIELD"
+            }
           }
         }
       },

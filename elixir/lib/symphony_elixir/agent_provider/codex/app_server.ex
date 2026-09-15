@@ -106,6 +106,7 @@ defmodule SymphonyElixir.AgentProvider.Codex.AppServer do
         opts \\ []
       ) do
     on_message = Keyword.get(opts, :on_message, &default_on_message/1)
+    model_reasoning_effort = SessionProtocol.reasoning_effort(issue)
 
     case SessionProtocol.start_turn(
            port,
@@ -135,7 +136,8 @@ defmodule SymphonyElixir.AgentProvider.Codex.AppServer do
           :codex_turn_started,
           EventFields.turn(turn_context, %{
             prompt_hash: EventFields.prompt_hash(prompt),
-            correlation_id: run_id
+            correlation_id: run_id,
+            model_reasoning_effort: model_reasoning_effort
           })
         )
 
@@ -293,7 +295,8 @@ defmodule SymphonyElixir.AgentProvider.Codex.AppServer do
             %{
               run_id: run_id,
               correlation_id: run_id,
-              thread_id: thread_id
+              thread_id: thread_id,
+              agent_model: codex_settings.model
             },
             DynamicToolBridge.metadata(bridge_runtime)
           )
@@ -359,6 +362,7 @@ defmodule SymphonyElixir.AgentProvider.Codex.AppServer do
         {:ok,
          %{
            approval_policy: codex_settings.approval_policy,
+           model: codex_settings.model,
            thread_sandbox: codex_settings.thread_sandbox,
            turn_sandbox_policy: turn_sandbox_policy
          }}

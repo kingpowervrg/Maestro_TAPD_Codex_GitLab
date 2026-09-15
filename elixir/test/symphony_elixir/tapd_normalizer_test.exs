@@ -1,7 +1,37 @@
 defmodule SymphonyElixir.TapdNormalizerTest do
   use SymphonyElixir.TestSupport
 
-  alias SymphonyElixir.Tracker.Tapd.{BugAIWorkflow, Normalizer}
+  alias SymphonyElixir.Tracker.Tapd.{BugAIModelLevel, BugAIWorkflow, Normalizer}
+
+  test "normalizes the TAPD AI model level and defaults missing or invalid values to medium" do
+    tracker = %{
+      "provider" => %{
+        "platform" => %{
+          "bug_ai_workflow" => %{"field" => "custom_field_6"},
+          "bug_ai_model_level" => %{"field" => "custom_field_7"}
+        }
+      }
+    }
+
+    bug = %{
+      "id" => "bug-model-level",
+      "title" => "Select Codex reasoning effort",
+      "status" => "reopened",
+      "current_owner" => "王权;",
+      "custom_field_6" => "接受/处理",
+      "custom_field_7" => "HIGH"
+    }
+
+    issue = Normalizer.normalize_bug(bug, tracker)
+    default_issue = Normalizer.normalize_bug(Map.delete(bug, "custom_field_7"), tracker)
+    invalid_issue = Normalizer.normalize_bug(Map.put(bug, "custom_field_7", "turbo"), tracker)
+
+    assert BugAIModelLevel.level(bug, tracker) == "high"
+    assert issue.custom_fields["AI模型等级"] == "high"
+    assert issue.custom_fields["ai_model_level"] == "high"
+    assert default_issue.custom_fields["ai_model_level"] == "medium"
+    assert invalid_issue.custom_fields["ai_model_level"] == "medium"
+  end
 
   test "recognizes AI exception workflow value and keeps the Bug out of dispatch" do
     tracker = %{

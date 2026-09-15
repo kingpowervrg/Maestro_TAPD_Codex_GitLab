@@ -15,6 +15,8 @@ defmodule SymphonyElixir.Observability.Fields do
     turn_id
     turn_number
     max_turns
+    agent_model
+    model_reasoning_effort
     attempt
     worker_host
     workspace_path
@@ -35,6 +37,8 @@ defmodule SymphonyElixir.Observability.Fields do
     turn_id
     turn_number
     max_turns
+    agent_model
+    model_reasoning_effort
     tracker_kind
     agent_provider_kind
     provider_kind
@@ -121,6 +125,8 @@ defmodule SymphonyElixir.Observability.Fields do
     turn_id
     turn_number
     max_turns
+    agent_model
+    model_reasoning_effort
     attempt
     worker_host
     workspace_path

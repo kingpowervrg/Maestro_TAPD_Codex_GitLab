@@ -12,12 +12,14 @@ defmodule SymphonyElixir.AgentProvider.Codex.Settings do
 
   @primary_key false
   @provider Kinds.codex()
-  @supported_options ~w(command command_argv prompt_transport approval_policy thread_sandbox turn_sandbox_policy credential_ref turn_timeout_ms read_timeout_ms stall_timeout_ms)
+  @supported_options ~w(command command_argv model prompt_transport approval_policy thread_sandbox turn_sandbox_policy credential_ref turn_timeout_ms read_timeout_ms stall_timeout_ms)
+  @model_env "SYMPHONY_AGENT_MODEL"
   @invalid_command_chars ["\n", "\r", <<0>>]
 
   @type t :: %__MODULE__{
           command: String.t() | nil,
           command_argv: [String.t()] | nil,
+          model: String.t() | nil,
           prompt_transport: String.t() | nil,
           approval_policy: String.t() | map() | nil,
           thread_sandbox: String.t() | nil,
@@ -57,6 +59,7 @@ defmodule SymphonyElixir.AgentProvider.Codex.Settings do
   embedded_schema do
     field(:command, :string, default: "codex app-server")
     field(:command_argv, {:array, :string})
+    field(:model, :string)
     field(:prompt_transport, :string, default: "json_rpc")
 
     field(:approval_policy, StringOrMap, default: "on-request")
@@ -77,6 +80,7 @@ defmodule SymphonyElixir.AgentProvider.Codex.Settings do
       [
         :command,
         :command_argv,
+        :model,
         :prompt_transport,
         :approval_policy,
         :thread_sandbox,
@@ -91,6 +95,7 @@ defmodule SymphonyElixir.AgentProvider.Codex.Settings do
     |> validate_required([:command])
     |> validate_command()
     |> validate_command_argv()
+    |> update_change(:model, &normalize_optional_string/1)
     |> update_change(:credential_ref, &normalize_optional_string/1)
     |> validate_inclusion(:prompt_transport, ["json_rpc"])
     |> validate_number(:turn_timeout_ms, greater_than: 0)
@@ -116,6 +121,10 @@ defmodule SymphonyElixir.AgentProvider.Codex.Settings do
     %{
       "command" => option_value(options, "command", defaults.command),
       "command_argv" => option_value(options, "command_argv", defaults.command_argv),
+      "model" =>
+        options
+        |> option_value("model", System.get_env(@model_env))
+        |> InputNormalizer.resolve_optional_string_setting(),
       "prompt_transport" => option_value(options, "prompt_transport", defaults.prompt_transport),
       "approval_policy" =>
         options
@@ -143,6 +152,7 @@ defmodule SymphonyElixir.AgentProvider.Codex.Settings do
     %__MODULE__{
       command: Map.get(options, "command"),
       command_argv: Map.get(options, "command_argv"),
+      model: Map.get(options, "model"),
       prompt_transport: Map.get(options, "prompt_transport"),
       approval_policy: Map.get(options, "approval_policy"),
       thread_sandbox: Map.get(options, "thread_sandbox"),
@@ -169,6 +179,7 @@ defmodule SymphonyElixir.AgentProvider.Codex.Settings do
           {:ok,
            %{
              approval_policy: String.t() | map(),
+             model: String.t() | nil,
              thread_sandbox: String.t(),
              turn_sandbox_policy: map()
            }}
@@ -181,6 +192,7 @@ defmodule SymphonyElixir.AgentProvider.Codex.Settings do
           {:ok,
            %{
              approval_policy: String.t() | map(),
+             model: String.t() | nil,
              thread_sandbox: String.t(),
              turn_sandbox_policy: map()
            }}
@@ -192,6 +204,7 @@ defmodule SymphonyElixir.AgentProvider.Codex.Settings do
       {:ok,
        %{
          approval_policy: codex.approval_policy,
+         model: codex.model,
          thread_sandbox: codex.thread_sandbox,
          turn_sandbox_policy: turn_sandbox_policy
        }}
