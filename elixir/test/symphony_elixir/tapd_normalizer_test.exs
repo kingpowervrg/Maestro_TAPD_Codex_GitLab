@@ -28,6 +28,31 @@ defmodule SymphonyElixir.TapdNormalizerTest do
     assert issue.custom_fields["AI特殊工作流"] == "AI异常"
   end
 
+  test "routes a previously resolved Bug again after it is reset to accepted" do
+    tracker = %{
+      "provider" => %{
+        "platform" => %{
+          "bug_ai_workflow" => %{"field" => "custom_field_6"}
+        }
+      }
+    }
+
+    resolved_bug = %{
+      "id" => "bug-1",
+      "title" => "Repair needs another pass",
+      "status" => "reopened",
+      "current_owner" => "王权;",
+      "custom_field_6" => "AI已解决"
+    }
+
+    resolved_issue = Normalizer.normalize_bug(resolved_bug, tracker)
+    reaccepted_issue = Normalizer.normalize_bug(Map.put(resolved_bug, "custom_field_6", "接受/处理"), tracker)
+
+    refute resolved_issue.assigned_to_worker
+    assert reaccepted_issue.assigned_to_worker
+    assert reaccepted_issue.custom_fields["AI特殊工作流"] == "接受/处理"
+  end
+
   test "normalizes a TAPD story into the shared issue shape" do
     story = %{
       "id" => "123456",

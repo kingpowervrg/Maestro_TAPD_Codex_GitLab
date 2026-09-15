@@ -98,10 +98,15 @@ states `new` and `reopened`. A Bug is dispatchable only when that custom field
 equals `接受/处理` and its `current_owner` matches `TAPD_ASSIGNEE`. The Git-only
 Codex workflow keeps the Bug status unchanged; after validation, commit, push,
 and workpad handoff succeed, it uses the typed
-`tracker.complete_ai_workflow` capability to set the field to `AI已解决`.
-The next issue refresh then stops the run, so the same Bug is not dispatched
-again. Configure the API field key returned by TAPD's Bug custom-field settings
-endpoint (for example, `custom_field_6`), not the display label.
+`tracker.complete_ai_workflow` capability to set the field to `AI已解决`, read
+the Bug back, and only then write the supplied final body to the existing
+canonical workpad. The next issue refresh then stops the run, so the same Bug
+is not dispatched again. If a human later adds feedback and resets the field to
+`接受/处理`, the Bug becomes eligible again. The next run reads the new comment
+ids, appends a rework round to the same workpad, fetches the previously
+published working branch, and continues on that branch. Configure the API field
+key returned by TAPD's Bug custom-field settings endpoint (for example,
+`custom_field_6`), not the display label.
 
 Linear:
 

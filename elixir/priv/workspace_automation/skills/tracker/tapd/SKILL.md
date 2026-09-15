@@ -51,7 +51,10 @@ generated inventory for the matching semantic capability:
   when explicitly exposed for operator or troubleshooting workflows.
 - `tracker.complete_ai_workflow`: after a validated code change is committed,
   pushed, and recorded in the workpad, change an accepted TAPD Bug's configured
-  `AI特殊工作流` field to `AI已解决`. Never call it before successful delivery.
+  `AI特殊工作流` field to `AI已解决`, read the Bug back, then update the canonical
+  workpad with the supplied final body. Pass the existing `workpad_id` and a
+  complete body whose final AI workflow item is checked. The tool writes that
+  body only after read-back succeeds. Never call it before successful delivery.
 
 If the inventory does not list the required typed capability, treat that as a
 workflow blocker unless the prompt explicitly supplies a different typed tool.
@@ -106,7 +109,9 @@ Complete an accepted Bug after successful delivery:
 
 ```json
 {
-  "issue_id": "{{ issue.id }}"
+  "issue_id": "{{ issue.id }}",
+  "workpad_id": "tapd:issue:{{ issue.id }}:workpad",
+  "body": "## Workpad\n\n### Plan\n\n- [x] Complete the TAPD AI workflow — AI特殊工作流=AI已解决 verified by read-back\n\n..."
 }
 ```
 
@@ -188,6 +193,12 @@ Read and save dependency facts:
 - Follow the active workflow template for when state transitions, follow-up
   Stories, dependency writes, and provider handoffs are allowed.
 - Use `tracker.upsert_comment` for non-workpad comments.
+- When a Bug is reaccepted after an earlier `AI已解决`, read comments with
+  `comment_limit: 100`, compare their stable ids with completed Workpad rework
+  entries, and treat unrecorded human comments as the next rework round.
+- Reuse the previously published working branch recorded in the Workpad for a
+  rework round. Fetch it, verify the previous published SHA is in its history,
+  and append the new commit to that branch instead of creating another branch.
 - Use `tracker.create_follow_up_issue` and `tracker.add_issue_relation` when
   splitting out related work instead of constructing TAPD Story REST calls.
 - Use `tracker.read_issue_dependencies` and `tracker.save_issue_dependency`

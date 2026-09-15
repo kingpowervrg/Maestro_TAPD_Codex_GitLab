@@ -69,6 +69,10 @@ defmodule SymphonyElixir.TapdAdapterTest do
     assert get_in(workpad_spec, ["inputSchema", "required"]) == ["issue_id", "body"]
 
     refute Map.has_key?(get_in(workpad_spec, ["inputSchema", "properties"]), "sections")
+
+    completion_spec = Enum.find(ToolExecutor.tool_specs(), &(&1["name"] == "tapd_complete_ai_workflow"))
+
+    assert get_in(completion_spec, ["inputSchema", "required"]) == ["issue_id", "workpad_id", "body"]
   end
 
   test "tapd config validation rejects missing workspace_id and blank optional platform values" do
@@ -702,14 +706,115 @@ defmodule SymphonyElixir.TapdAdapterTest do
     )
 
     test_pid = self()
+    issue_id = "1153000000000000100"
+    workpad_id = "tapd:issue:#{issue_id}:workpad"
+    provider_comment_id = "1153000000000000999"
+    final_workpad = "## Workpad\n\n### Plan\n\n- [x] Complete the TAPD AI workflow — read-back verified"
+    bug_reads = :atomics.new(1, signed: false)
+
+    register_tapd_workpad!(issue_id, provider_comment_id)
     record_review_ready_evidence(["1153000000000000100", "TAPD-1153000000000000100"])
 
     response =
       Bridge.execute(
         "tapd_complete_ai_workflow",
-        %{"issue_id" => "1153000000000000100"},
+        %{"issue_id" => issue_id, "workpad_id" => workpad_id, "body" => final_workpad},
         request_fun: fn request ->
           send(test_pid, {:tapd_typed_request, request})
+
+          case {request.method, request.url} do
+            {"GET", "https://api.tapd.cn/stories"} ->
+              {:ok, %{status: 200, body: %{"status" => 1, "data" => []}}}
+
+            {"GET", "https://api.tapd.cn/bugs"} ->
+              read_number = :atomics.add_get(bug_reads, 1, 1)
+
+              {:ok,
+               %{
+                 status: 200,
+                 body: %{
+                   "status" => 1,
+                   "data" => [
+                     %{
+                       "Bug" => %{
+                         "id" => issue_id,
+                         "title" => "Fix combat regression",
+                         "status" => "new",
+                         "custom_field_6" => if(read_number == 1, do: "接受/处理", else: "AI已解决")
+                       }
+                     }
+                   ]
+                 }
+               }}
+
+            {"POST", "https://api.tapd.cn/bugs"} ->
+              {:ok, %{status: 200, body: %{"status" => 1, "data" => %{"Bug" => %{}}}}}
+
+            {"POST", "https://api.tapd.cn/comments"} ->
+              assert request.params == %{
+                       "id" => provider_comment_id,
+                       "description" => CommentCodec.encode_description(final_workpad),
+                       "workspace_id" => "53000000"
+                     }
+
+              {:ok, %{status: 200, body: %{"status" => 1, "data" => %{"Comment" => %{"id" => provider_comment_id}}}}}
+          end
+        end
+      )
+
+    assert response["success"] == true, inspect(response)
+    assert get_in(response, ["payload", "issue", "entityType"]) == "bug"
+    assert get_in(response, ["payload", "issue", "customFields", "AI特殊工作流"]) == "AI已解决"
+    assert get_in(response, ["payload", "comment", "id"]) == workpad_id
+    assert get_in(response, ["payload", "comment", "body"]) == final_workpad
+    assert :atomics.get(bug_reads, 1) == 2
+
+    assert_received {:tapd_typed_request,
+                     %{
+                       method: "POST",
+                       url: "https://api.tapd.cn/bugs",
+                       params: %{
+                         "id" => "1153000000000000100",
+                         "custom_field_6" => "AI已解决",
+                         "workspace_id" => "53000000"
+                       }
+                     }}
+
+    assert_received {:tapd_typed_request,
+                     %{
+                       method: "POST",
+                       url: "https://api.tapd.cn/comments"
+                     }}
+  end
+
+  test "tapd_complete_ai_workflow does not finalize the workpad when read-back is stale" do
+    write_workflow_file!(
+      Workflow.workflow_file_path(),
+      tapd_typed_tool_workflow_config(
+        tracker_platform: %{
+          "workspace_id" => "53000000",
+          "bug_ai_workflow" => %{
+            "field" => "custom_field_6",
+            "accepted_value" => "接受/处理",
+            "resolved_value" => "AI已解决",
+            "active_states" => ["new", "reopened"]
+          }
+        }
+      )
+    )
+
+    test_pid = self()
+    issue_id = "1153000000000000100"
+    workpad_id = "tapd:issue:#{issue_id}:workpad"
+    register_tapd_workpad!(issue_id, "1153000000000000999")
+    record_review_ready_evidence([issue_id, "TAPD-#{issue_id}"])
+
+    response =
+      Bridge.execute(
+        "tapd_complete_ai_workflow",
+        %{"issue_id" => issue_id, "workpad_id" => workpad_id, "body" => "final body"},
+        request_fun: fn request ->
+          send(test_pid, {:tapd_stale_readback_request, request})
 
           case {request.method, request.url} do
             {"GET", "https://api.tapd.cn/stories"} ->
@@ -724,7 +829,7 @@ defmodule SymphonyElixir.TapdAdapterTest do
                    "data" => [
                      %{
                        "Bug" => %{
-                         "id" => "1153000000000000100",
+                         "id" => issue_id,
                          "title" => "Fix combat regression",
                          "status" => "new",
                          "custom_field_6" => "接受/处理"
@@ -736,24 +841,16 @@ defmodule SymphonyElixir.TapdAdapterTest do
 
             {"POST", "https://api.tapd.cn/bugs"} ->
               {:ok, %{status: 200, body: %{"status" => 1, "data" => %{"Bug" => %{}}}}}
+
+            {"POST", "https://api.tapd.cn/comments"} ->
+              flunk("workpad must not be updated before AI workflow read-back succeeds")
           end
         end
       )
 
-    assert response["success"] == true, inspect(response)
-    assert get_in(response, ["payload", "issue", "entityType"]) == "bug"
-    assert get_in(response, ["payload", "issue", "customFields", "AI特殊工作流"]) == "AI已解决"
-
-    assert_received {:tapd_typed_request,
-                     %{
-                       method: "POST",
-                       url: "https://api.tapd.cn/bugs",
-                       params: %{
-                         "id" => "1153000000000000100",
-                         "custom_field_6" => "AI已解决",
-                         "workspace_id" => "53000000"
-                       }
-                     }}
+    refute response["success"]
+    assert get_in(response, ["payload", "error", "reason"]) =~ "read-back did not confirm"
+    refute_received {:tapd_stale_readback_request, %{method: "POST", url: "https://api.tapd.cn/comments"}}
   end
 
   test "mark_ai_workflow_exception writes the configured AI exception value" do

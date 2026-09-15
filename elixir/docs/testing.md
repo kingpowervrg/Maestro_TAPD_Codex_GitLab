@@ -307,7 +307,12 @@ commit. Orchestrator coverage verifies unrouted workspace cleanup during a live
 run, after normal worker exit, and from a pending retry. The Repo Core
 dynamic-tool test uses a local bare Git repository to exercise sparse
 expansion, branch creation, diff, commit, push, and equality of local and
-published head SHAs.
+published head SHAs. TAPD adapter coverage also verifies that Bug AI completion
+writes `AI已解决`, reads the Bug back, and updates the registered workpad only
+after read-back succeeds; a stale read-back must leave the final workpad body
+unwritten. Template coverage verifies that reaccepted Bugs process unrecorded
+human comment ids as a new rework round and reuse the previously published
+working branch.
 
 Run the focused checks with:
 

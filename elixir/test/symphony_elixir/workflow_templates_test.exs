@@ -912,6 +912,12 @@ defmodule SymphonyElixir.WorkflowTemplatesTest do
     end
 
     assert prompt =~ "publishedHeadSha"
+    assert prompt =~ "Rework Round N"
+    assert prompt =~ "feedback comment ids"
+    assert prompt =~ "Reuse the original working branch"
+    assert prompt =~ "read the Bug back"
+    assert prompt =~ "canonical `workpad_id`"
+    assert prompt =~ "final workpad `body`"
     refute prompt =~ "git sparse-checkout add <path>"
     assert prompt =~ "suggested_mr_title"
     assert prompt =~ "do not create or update an MR"

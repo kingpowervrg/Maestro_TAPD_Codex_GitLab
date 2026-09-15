@@ -236,14 +236,20 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
       tool_spec(
         @complete_ai_workflow_tool,
         @complete_ai_workflow_capability,
-        "After a successful code change and push, mark the configured TAPD Bug AI special workflow field as resolved. The tool verifies that the Bug is still in an active AI state and currently accepted for processing.",
+        "After a successful code change and push, mark the configured TAPD Bug AI special workflow field as resolved, read the Bug back, and update the canonical workpad with the caller-supplied final body. The final workpad is written only after read-back confirms AI已解决.",
         "write",
         %{
           "type" => "object",
           "additionalProperties" => false,
-          "required" => ["issue_id"],
+          "required" => ["issue_id", "workpad_id", "body"],
           "properties" => %{
-            "issue_id" => %{"type" => "string", "description" => "Full TAPD Bug id or TAPD-<id> identifier."}
+            "issue_id" => %{"type" => "string", "description" => "Full TAPD Bug id or TAPD-<id> identifier."},
+            "workpad_id" => %{"type" => "string", "description" => "Canonical workpad id returned by tapd_issue_snapshot."},
+            "body" => %{
+              "type" => "string",
+              "description" =>
+                "Complete canonical workpad body to write after AI workflow read-back succeeds. It must mark the final AI workflow checklist item complete and preserve all prior handoff and rework history."
+            }
           }
         }
       )
@@ -460,13 +466,15 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
   end
 
   defp complete_ai_workflow(tracker, arguments, opts) do
-    with {:ok, issue_id} <- required_issue_id_args(arguments),
+    with {:ok, args} <- complete_ai_workflow_args(arguments),
          {:ok, field} <- configured_bug_ai_field(tracker),
-         {:ok, issue} <- fetch_issue(tracker, issue_id, opts),
+         {:ok, issue} <- fetch_issue(tracker, args.issue_id, opts),
          :ok <- validate_ai_workflow_completion(issue, tracker),
-         :ok <- validate_ai_workflow_completion_readiness(issue, issue_id, opts),
-         {:ok, completed_issue} <- maybe_commit_ai_workflow_completion(tracker, issue, field, opts) do
-      {:success, success_payload(%{"issue" => completed_issue})}
+         :ok <- validate_ai_workflow_completion_readiness(issue, args.issue_id, opts),
+         :ok <- maybe_commit_ai_workflow_completion(tracker, issue, field, opts),
+         {:ok, completed_issue} <- fetch_verified_ai_workflow_completion(tracker, args.issue_id, opts),
+         {:ok, comment} <- finalize_ai_workflow_workpad(tracker, args, opts) do
+      {:success, success_payload(%{"issue" => completed_issue, "comment" => comment})}
     else
       {:error, reason} -> typed_failure(reason)
     end
@@ -514,13 +522,55 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
     resolved_value = BugAIWorkflow.resolved_value(tracker)
 
     if Map.get(issue.custom_fields, "ai_special_workflow") == resolved_value do
-      {:ok, completed_ai_workflow_issue(issue, resolved_value)}
+      :ok
     else
       with {:ok, response} <- request(tracker, "POST", Paths.bugs(), %{"id" => issue.id, field => resolved_value}, opts),
            {:ok, _data} <- Response.decode_success_envelope(Paths.bugs(), response) do
-        {:ok, completed_ai_workflow_issue(issue, resolved_value)}
+        :ok
       end
     end
+  end
+
+  defp fetch_verified_ai_workflow_completion(tracker, issue_id, opts) do
+    with {:ok, issue} <- fetch_issue(tracker, issue_id, opts),
+         :ok <- verify_ai_workflow_resolved(issue, tracker) do
+      {:ok, completed_ai_workflow_issue(issue, BugAIWorkflow.resolved_value(tracker))}
+    end
+  end
+
+  defp verify_ai_workflow_resolved(%Issue{entity_type: "bug"} = issue, tracker) do
+    expected = BugAIWorkflow.resolved_value(tracker)
+    actual = Map.get(issue.custom_fields, "ai_special_workflow")
+
+    if actual == expected do
+      :ok
+    else
+      {:error,
+       {:state_conflict,
+        %{
+          "message" => "TAPD Bug AI workflow read-back did not confirm the resolved value.",
+          "expected" => expected,
+          "actual" => actual
+        }}}
+    end
+  end
+
+  defp verify_ai_workflow_resolved(%Issue{}, _tracker) do
+    {:error, {:invalid_arguments, "AI workflow completion is supported only for TAPD Bugs."}}
+  end
+
+  defp finalize_ai_workflow_workpad(tracker, args, opts) do
+    upsert_workpad_comment(
+      tracker,
+      %{
+        issue_id: args.issue_id,
+        body: args.body,
+        entity_type: "bug",
+        workpad_id: args.workpad_id,
+        mode: "replace"
+      },
+      opts
+    )
   end
 
   defp completed_ai_workflow_issue(%Issue{} = issue, resolved_value) do
@@ -788,6 +838,23 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
   end
 
   defp upsert_workpad_args(_arguments), do: {:error, {:invalid_arguments, "Expected an object with issue_id and body."}}
+
+  defp complete_ai_workflow_args(arguments) when is_map(arguments) do
+    with {:ok, issue_id} <- required_string(arguments, "issue_id"),
+         {:ok, workpad_id} <- required_string(arguments, "workpad_id"),
+         {:ok, body} <- required_string(arguments, "body") do
+      {:ok,
+       %{
+         issue_id: issue_id,
+         workpad_id: workpad_id,
+         body: body
+       }}
+    end
+  end
+
+  defp complete_ai_workflow_args(_arguments) do
+    {:error, {:invalid_arguments, "Expected an object with issue_id, workpad_id, and body."}}
+  end
 
   defp attach_external_reference_args(arguments) when is_map(arguments) do
     with {:ok, issue_id} <- required_string(arguments, "issue_id"),

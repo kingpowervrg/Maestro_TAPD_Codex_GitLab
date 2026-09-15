@@ -162,7 +162,8 @@ Bug：
 - 执行前读取包含评论的 snapshot，逐项复核所有 `### Confusions`；历史记录的存在本身不构成阻塞。
 - 仍存在的 Confusion 要把完整当前证据写入 canonical workpad 后停止；Maestro 将 `AI特殊工作流` 更新为 `AI异常` 并抑制重试。
 - Confusion 已消失时，在 workpad 中标记 resolved 并继续。
-- 成功交付后调用 `tracker.complete_ai_workflow`，在状态仍有效且值仍为 `接受/处理`（或已幂等为 `AI已解决`）时写入 `AI已解决`。
+- 成功交付后调用 `tracker.complete_ai_workflow`，在状态仍有效且值仍为 `接受/处理`（或已幂等为 `AI已解决`）时写入 `AI已解决`，随后回读 Bug；只有回读确认后才以调用方提供的最终 body 更新原 canonical workpad。
+- 人工新增修改意见并把字段重置为 `接受/处理` 后，Bug 可重新派发。新一轮按未处理的人类评论 ID 建立 `Rework Round N`，继续原 workpad 和原已发布工作分支。
 - Bug 状态不改变。typed-tool blocker 等异常退出路径由 Orchestrator 尝试写入 `AI异常`；写入成功或失败均产生事件。
 
 ### 5.6 目标运行配置
@@ -254,8 +255,8 @@ $env:GITLAB_PROJECT_ID="koa-client-code/koa-client-code"
 6. 修改并运行目标仓库要求的验证。
 7. `repo_diff` 开启 whitespace check 并确认只包含预期变更。
 8. `repo_commit` 后通过 `repo_push` 发布并校验 SHA。
-9. workpad 记录 repo、branch、SHA、验证结果、`suggested_mr_title` 和 `suggested_mr_description`。
-10. Story 移动到人工评审；Bug 调用 `tracker.complete_ai_workflow` 写 `AI已解决`，两者随后立即停止。
+9. workpad 记录 repo、branch、SHA、验证结果、`suggested_mr_title` 和 `suggested_mr_description`；返工轮次额外记录已处理的人类评论 ID。
+10. Story 移动到人工评审；Bug 调用 `tracker.complete_ai_workflow` 写 `AI已解决`、回读确认并更新最终 Workpad，随后立即停止。
 
 状态：
 
@@ -263,6 +264,8 @@ $env:GITLAB_PROJECT_ID="koa-client-code/koa-client-code"
 - [x] canonical workpad 在 workspace root 镜像为 `.symphony-tapd-workpad.md`，不得进入 `repo/` 或提交。
 - [x] workpad 已要求生成供人工使用的 MR 标题和说明。
 - [x] Bug success/exception 字段闭环及废弃字段禁用规则已实现。
+- [x] Bug 完成工具要求 canonical `workpad_id` 和最终 `body`，字段回读成功后才勾选最终 Workpad。
+- [x] Bug 重新接受后按新增评论 ID 建立返工轮次，并复用原发布分支。
 - [ ] 使用真实候选任务完成一次完全由 Maestro typed tools 驱动的成功路径灰度。
 
 #### P0-5：测试与文档
@@ -315,10 +318,18 @@ $env:GITLAB_PROJECT_ID="koa-client-code/koa-client-code"
 1. Bug 处于 `new`/`reopened`，匹配负责人，且 `AI特殊工作流=接受/处理`。
 2. 评论中的历史 `Confusions` 均已复核；不存在当前阻塞，或已在 workpad 标记为 resolved。
 3. 完成共用 Git 路径。
-4. `tracker.complete_ai_workflow` 将 `AI特殊工作流` 写为 `AI已解决`。
+4. `tracker.complete_ai_workflow` 将 `AI特殊工作流` 写为 `AI已解决`，回读 Bug 确认该值，再更新原 canonical workpad 的最终勾选。
 5. Bug 原状态不变；任务 workspace 删除，共享 object cache 保留。
 
-### 7.4 Bug Confusion/异常路径
+### 7.4 Bug 返工路径
+
+1. 人工在上次完成后新增修改意见，并把 `AI特殊工作流` 重置为 `接受/处理`。
+2. Maestro 重新派发该 Bug；Agent 读取最多 100 条评论，用未记录的人类评论 ID 建立新的 `Rework Round N`。
+3. Agent 从原 workpad 读取 `branch_name` 和 `published_head_sha`，fetch 并恢复原工作分支，确认其历史包含上次发布 SHA。
+4. Agent 在同一分支完成修改、验证、commit 和 push，并把本轮评论 ID、验证和新 SHA 写入同一 workpad。
+5. 完成工具再次执行字段写入、回读和最终 Workpad 更新。
+
+### 7.5 Bug Confusion/异常路径
 
 1. 执行前发现某条 `Confusions` 描述的问题当前仍存在。
 2. canonical workpad 记录完整当前证据，Agent 停止继续修改。

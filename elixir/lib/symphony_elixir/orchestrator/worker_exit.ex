@@ -13,7 +13,6 @@ defmodule SymphonyElixir.Orchestrator.WorkerExit do
   alias SymphonyElixir.Orchestrator.RunningState
   alias SymphonyElixir.Orchestrator.Runtime
   alias SymphonyElixir.Orchestrator.State
-  alias SymphonyElixir.Tracker
   alias SymphonyWorkerDaemon.Session.Status, as: WorkerSessionStatus
 
   @default_issue_refresh_timeout_ms 2_000
@@ -211,7 +210,7 @@ defmodule SymphonyElixir.Orchestrator.WorkerExit do
         )
 
       :schedule_retry ->
-        # Provider errors marked non-retryable (for example Codex quota
+        # Provider errors marked non-retryable (for example provider quota
         # exhaustion) must not be retried merely because the TAPD issue is
         # still active.  Doing so creates an unbounded five-minute retry
         # loop and consumes the remaining quota while no work can run.
@@ -234,7 +233,7 @@ defmodule SymphonyElixir.Orchestrator.WorkerExit do
   defp suppress_retry_after_typed_tool_blocker(state, issue_id, running_entry, reason, blocker, opts) do
     issue = Map.get(running_entry, :issue)
     register_typed_tool_blocker(issue_id, running_entry, blocker)
-    mark_tapd_bug_ai_exception(issue, issue_id, running_entry, reason, opts)
+    mark_issue_workflow_exception(issue, issue_id, running_entry, reason, opts)
 
     Events.emit_issue_worker_finished(
       state,
@@ -275,28 +274,27 @@ defmodule SymphonyElixir.Orchestrator.WorkerExit do
     complete_issue(state, issue_id)
   end
 
-  defp mark_tapd_bug_ai_exception(%Issue{entity_type: "bug"} = issue, issue_id, running_entry, reason, opts) do
-    mark_exception = Keyword.get(opts, :mark_ai_workflow_exception, &Tracker.mark_ai_workflow_exception/1)
+  defp mark_issue_workflow_exception(%Issue{entity_type: "bug"} = issue, issue_id, running_entry, reason, opts) do
+    mark_exception = Keyword.get(opts, :mark_ai_workflow_exception, fn _issue_id -> :ok end)
 
     case mark_exception.(issue_id) do
       :ok ->
-        Events.emit(:warning, :tapd_bug_ai_workflow_exception, issue, nil, %{
+        Events.emit(:warning, :tracker_issue_workflow_exception, issue, nil, %{
           issue_id: issue_id,
           issue_identifier: Map.get(running_entry, :identifier),
           run_id: Map.get(running_entry, :run_id),
           reason: inspect(reason),
-          ai_workflow_value: "AI异常",
-          message: "tapd_bug_ai_workflow_exception issue_id=#{issue_id}"
+          message: "tracker_issue_workflow_exception issue_id=#{issue_id}"
         })
 
       {:error, update_reason} ->
-        Events.emit(:error, :tapd_bug_ai_workflow_exception_update_failed, issue, nil, %{
+        Events.emit(:error, :tracker_issue_workflow_exception_update_failed, issue, nil, %{
           issue_id: issue_id,
           issue_identifier: Map.get(running_entry, :identifier),
           run_id: Map.get(running_entry, :run_id),
           reason: inspect(reason),
           error: inspect(update_reason),
-          message: "tapd_bug_ai_workflow_exception_update_failed issue_id=#{issue_id} error=#{inspect(update_reason)}"
+          message: "tracker_issue_workflow_exception_update_failed issue_id=#{issue_id} error=#{inspect(update_reason)}"
         })
 
       _other ->
@@ -304,11 +302,11 @@ defmodule SymphonyElixir.Orchestrator.WorkerExit do
     end
   end
 
-  defp mark_tapd_bug_ai_exception(_issue, _issue_id, _running_entry, _reason, _opts), do: :ok
+  defp mark_issue_workflow_exception(_issue, _issue_id, _running_entry, _reason, _opts), do: :ok
 
   defp suppress_retry_after_confusion(state, issue_id, running_entry, reason, opts) do
     issue = Map.get(running_entry, :issue)
-    mark_tapd_bug_ai_exception(issue, issue_id, running_entry, reason, opts)
+    mark_issue_workflow_exception(issue, issue_id, running_entry, reason, opts)
 
     Events.emit_issue_worker_finished(
       state,
