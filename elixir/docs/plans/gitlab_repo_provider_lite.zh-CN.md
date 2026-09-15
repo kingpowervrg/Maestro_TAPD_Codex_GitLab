@@ -1,97 +1,101 @@
-# GitLab Git-only 基础操作落地计划
+# GitLab Git-only（SSH 写入 + 只读搜索）落地计划
 
-> 更新（2026-09-12）：最初的“零 GitLab API”边界已被后续需求收窄调整。
-> 当前 `tapd/git/codex` 只新增只读代码搜索 API，MR、评论、Pipeline、审批
-> 和合并仍保持人工处理。现行配置见 `docs/repo_provider.md`。
+> 更新（2026-09-15）：本文已按 Maestro 当前实现重新校准。Lite 边界不再是“零 GitLab API”，而是“Git SSH 写入 + 唯一只读 GitLab blob 搜索 API”。MR、评论、Pipeline、审批和合并仍由人工处理。
 
-状态：In Progress（代码、Git SSH 写入验证、质量门禁和 TAPD 只读候选任务校验已完成；端到端灰度待完成）
-版本：Lite（仅 Git 基础操作）  
-创建日期：2026-09-02  
-最后验证：2026-09-09
-适用范围：Maestro Elixir Runtime  
-目标实例：`gitlab-ee.funplus.io`  
-目标仓库：`koa-client-code/koa-client-code`
+- 状态：In Progress（代码路径、模板、定向测试、Git SSH 写入 smoke 和历史质量门禁已完成；真实任务的 Maestro typed-tool 端到端灰度仍待完成）
+- 版本：Lite
+- 创建日期：2026-09-02
+- 代码对齐日期：2026-09-15
+- 最近完整质量门禁记录：2026-09-09
+- 适用范围：Maestro Elixir Runtime
+- 目标实例：`gitlab-ee.funplus.io`
+- 目标仓库：`koa-client-code/koa-client-code`
 
 ## 1. Problem Statement
 
-当前目标只要求 Maestro 在 TAPD 工作流中通过 Git SSH 完成 clone、fetch、branch、diff、commit 和 push。Merge Request 创建或更新、评审反馈、Pipeline、审批和合并全部由人工在 GitLab 中完成，因此没有必要实现完整的 GitLab Repo Provider API。
+Maestro 需要在 TAPD 工作流中处理大型私有 GitLab 仓库：先远程定位代码，再仅展开必要目录，最后通过 Git SSH 完成 checkout、diff、commit、push 和远端 SHA 校验。创建或更新 Merge Request、读取评审意见、查询 Pipeline、审批及合并仍由人工在 GitLab 中完成，因此无需实现完整 GitLab Repo Provider。
 
-现有 Repo Core 已经提供所需基础 Git 能力，但现有 `tapd/github/codex` 模板和 `push` 技能包含强制 PR 行为。需要新增一个明确的 Git-only 工作流，使自动化在成功推送工作分支并记录交接信息后停止。
+目标仓库体积约 146 GB。普通 shallow clone 仍然过慢，因此当前模板使用共享 Git object cache、blobless sparse clone、sparse index 和按需目录展开。为避免在定位文件前下载大量 blob，`git` Adapter 仅增加一个受控的 GitLab 只读代码搜索能力。
+
+TAPD Bug 还要求独立的 AI 工作流闭环：只有 Bug 的 `AI特殊工作流` 为 `接受/处理` 且状态处于 `new`/`reopened` 时才允许派发；执行前检查评论中已有的 `### Confusions`；成功后写为 `AI已解决`，确认阻塞或相关不可恢复异常时写为 `AI异常`。已废弃的 `AI是否遇到异常` 字段不得再读写。
 
 ## 2. Goals
 
-1. Maestro 能从 TAPD 工作项创建隔离 workspace，并通过 SSH 克隆目标 GitLab 仓库。
-2. Codex 能在工作项专属分支完成修改、验证、提交和推送，并验证远端 SHA 与本地 HEAD 一致。
-3. 自动化成功后在 TAPD 记录分支名、commit SHA 和测试结果，再进入人工评审状态。
-4. 运行期间不调用 GitHub/GitLab 的 MR、评论、Pipeline、审批或合并 API。
-5. 不需要 GitLab API User、API Password、Access Token 或 `glab` CLI。
+1. 从 TAPD Story 或 Bug 创建隔离 workspace，并通过 SSH 初始化目标仓库。
+2. 在下载 blob 前使用 `repo_remote_search` 定位文件，再用 `repo_sparse_add` 仅展开最小必要目录。
+3. 从工作项 `代码分支` 指定的开发基线创建专属工作分支；字段缺失时回退到 `repo.base_branch`。
+4. 完成修改、验证、diff、commit、push，并校验 `publishedHeadSha == headSha`。
+5. 在 canonical workpad 记录仓库、分支、commit SHA、验证结果以及供人工使用的 MR 标题和说明。
+6. Story 成功后进入人工评审状态；Bug 成功后保持 Bug 状态不变，仅将 `AI特殊工作流` 更新为 `AI已解决`。
+7. Bug 执行前复核历史 `Confusions`。只有问题当前仍存在才视为阻塞，并由 Maestro 将 `AI特殊工作流` 更新为 `AI异常`。
+8. 除 `repo_remote_search` 外，不调用 GitLab 的 MR、评论、Pipeline、审批或合并 API。
 
 ## 3. Non-Goals
 
-1. 不创建、更新、关闭或合并 GitLab Merge Request；这些操作由人工完成。
-2. 不读取或回复 GitLab 评审评论；需要返工时由人工把要求写入 TAPD 并重新进入开发状态。
+1. 不创建、更新、关闭或合并 GitLab Merge Request。
+2. 不读取或回复 GitLab 评审评论；返工要求由人工同步到 TAPD。
 3. 不读取 Pipeline、Job、审批、冲突或保护分支状态。
-4. 不实现 GitLab REST/GraphQL Client，不增加 `GITLAB_TOKEN` 等 API 凭证。
-5. 不自动处理 TAPD 的 merging 路由；人工完成 MR 和合并后再手动结束工作项。
+4. 不实现完整 GitLab REST/GraphQL Provider；只保留 blob search 所需的只读 `GET /projects/:id/search?scope=blobs`。
+5. 不把 `GITLAB_API_TOKEN` 暴露给 Codex shell，也不允许 Agent 直接请求 GitLab API。
+6. 不自动处理 Story 的 merging 路由，也不改变 Bug 的 TAPD 状态。
+7. 不再使用已废弃的 `AI是否遇到异常` 字段。
 
 ## 4. User Stories
 
 ### Maestro 操作者
 
-- 作为 Maestro 操作者，我希望用一个 Git-only 模板连接私有 GitLab 仓库，以便自动完成代码修改和分支推送。
-- 作为 Maestro 操作者，我希望自动化明确停在人工评审前，以免误创建或合并 MR。
-- 作为 Maestro 操作者，我希望在 TAPD 中看到分支名、commit SHA 和验证结果，以便手工创建 MR。
+- 使用 `tapd/git/codex` 连接私有 GitLab，在单并发下自动完成代码修改和工作分支推送。
+- 启动时校验远程搜索、稀疏展开和 Bug AI 完成工具，缺少必需能力时立即失败，而不是运行到一半才阻塞。
+- 在 TAPD workpad 中看到分支、SHA、验证结果和建议 MR 文本，以便人工接管。
+- 对 Bug 明确区分成功与异常，不依赖废弃字段。
 
 ### 开发者与评审者
 
-- 作为开发者，我希望每个 TAPD 工作项使用独立工作分支，避免直接修改默认分支。
-- 作为评审者，我希望 MR、Pipeline 检查、反馈和合并仍由人工按现有 GitLab 流程控制。
-- 作为开发者，我希望评审返工通过 TAPD 重新进入开发状态，而不是依赖 Maestro 读取 GitLab 评论。
+- 每个 TAPD 工作项使用独立工作分支，不直接修改开发基线或最终集成分支。
+- MR、Pipeline、评审、审批和合并继续由人工控制。
+- 评审返工通过 TAPD 回到 `developing`，Maestro 从 canonical workpad 继续执行。
 
 ### GitLab 管理员
 
-- 作为 GitLab 管理员，我只需要为 Maestro 提供受限的 SSH 写权限，无需开通 GitLab API 账号或 Token。
+- 为 Git 写操作提供受限 SSH 权限。
+- 为只读代码搜索提供最小权限的 `read_api` Token；Token 仅存在于 Maestro 服务环境，不进入 Agent shell。
 
-## 5. Architecture Decisions
+## 5. Current Architecture Decisions
 
-### 5.1 使用 Repo Core，不实现 GitLab API Provider
+### 5.1 Repo Core 负责 Git 写入
 
-基础操作继续由 `SymphonyElixir.Repo` 和现有 `repo_checkout`、`repo_diff`、`repo_commit`、`repo_push` typed tools 执行。这些能力只依赖 Git 和目标 remote，与代码托管平台 API 无关。
+以下工具由 `SymphonyElixir.Repo` 提供，不依赖托管平台 change-proposal API：
 
-不新增以下内容：
+- `repo_sparse_add`
+- `repo_checkout`
+- `repo_diff`
+- `repo_commit`
+- `repo_push`
 
-- GitLab HTTP Client
-- GitLab RuntimeEnv/Token
-- MR/Note/Discussion/Approval/Pipeline 映射
-- GitLab Provider smoke test
-- 自动合并逻辑
+`repo_push` 是交付边界。成功必须同时满足工作分支已发布且 `publishedHeadSha` 与本地 `headSha` 一致。模板禁止直接向开发基线或最终集成分支提交或推送，也禁止普通 `--force`。
 
-### 5.2 增加零 API 能力的 `git` Provider
+### 5.2 `git` Adapter 只增加 GitLab 只读搜索
 
-配置当前要求存在一个已注册的 Repo Provider kind。为避免将 GitLab 仓库错误标记为 GitHub，也避免使用会模拟 PR 成功的 Memory Provider，新增轻量 `git` Provider：
+当前 Provider 配置仍是：
 
 ```text
 kind: git
-capabilities: []
+capabilities: [:code_search]
 ```
 
-该 Adapter 只负责通过现有 Provider 配置校验，不声明任何 change-proposal 能力，不执行外部 API 调用。
+`SymphonyElixir.RepoProvider.Git.Adapter` 不提供 change proposal、review、checks、pipeline、approval 或 merge 能力。仅当 `repo.provider.options.remote_code_search: gitlab` 时，Maestro 暴露 `repo_remote_search`。
 
-建议模块：
+搜索实现位于 `SymphonyElixir.RepoProvider.GitLab.CodeSearch`，行为如下：
 
-```text
-SymphonyElixir.RepoProvider.Git.Adapter
-```
+- 使用 GitLab `GET /projects/:id/search`，固定 `scope=blobs`。
+- 支持 `query`、`ref`、可选安全相对路径 `path` 和 `max_results`。
+- 默认最多 20 条，最大 100 条；返回规范化的 path、filename、startline、snippet 和 ref。
+- API base URL 和 project id 可从标准 Git remote 推导，也允许显式覆盖。
+- `GITLAB_API_TOKEN` 由 Maestro 服务端注入 `Private-Token` header；工具 schema、结果和错误诊断不得泄漏 Token。
 
-### 5.3 新增 Git-only 模板
+### 5.3 `tapd/git/codex` 模板
 
-新增模板 alias：
-
-```text
-tapd/git/codex
-```
-
-关键 profile 配置：
+Profile 保持 Git-only 交付：
 
 ```yaml
 workflow:
@@ -105,34 +109,63 @@ workflow:
         typed_repo_tools: false
 ```
 
-说明：
+这里的 `typed_repo_tools: false` 只表示不要求 Repo Provider 的 change-proposal 工具；Repo Core 工具仍是工作流必需能力。
 
-- `change_proposal: false` 取消 MR/PR 作为交付前置条件。
-- `typed_repo_tools: false` 在当前 profile 中表示不要求 Repo Provider 的 change-proposal typed tools；Repo Core 的 checkout/diff/commit/push 仍然是必需能力。
-- 模板必须使用 `repo_push` typed tool或 `bin/repo push`，不能调用当前会继续创建 PR 的 `push` skill。
+模板启动时通过 `TapdGitCodexCapabilities` 强制解析三项能力：
 
-### 5.4 TAPD 人工交接边界
+- `repo.remote_search`
+- `repo.sparse_add`
+- `tracker.complete_ai_workflow`
 
-建议自动扫描的状态只包括规划和开发：
+任一能力不可用时，配置加载返回 `tapd_git_codex_required_tool_unavailable`，不启动任务。
 
-```yaml
-tracker:
-  lifecycle:
-    active_states:
-      - status_4
-      - developing
+最终 Repo inventory 应精确包含：
+
+```text
+repo_remote_search
+repo_sparse_add
+repo_checkout
+repo_diff
+repo_commit
+repo_push
 ```
 
-规则：
+不得包含 change-proposal、review、checks 或 merge 工具。
 
-- `planning/status_4`：Maestro 转入开发并开始执行。
-- `developing`：修改、验证、commit、push。
-- `review/status_5`：人工等待状态，Maestro 不自动执行。
-- `merging`：不加入 `active_states`，Maestro 不自动执行 land/merge。
-- `status_6/status_8`：当前 Workspace 工作项类型实际返回的完成终态；`status_8` 显示名为 `Online`，仅适用于需求主任务类型。当前流程不存在拒绝终态，因此禁用 rejected 路由。
-- 如需返工，人工把评审要求同步到 TAPD，再将工作项移回 `developing`。
+### 5.4 大仓库 workspace 策略
 
-### 5.5 目标运行配置
+`after_create` 为每个 remote 准备共享 bare object cache，默认位于：
+
+```text
+$SYMPHONY_WORKSPACE_ROOT/.git-object-cache
+```
+
+也可通过 `SYMPHONY_GIT_OBJECT_CACHE_ROOT` 指向其他持久目录。cache 准备使用 `flock` 串行化；任务 clone 使用：
+
+```text
+--depth 1 --filter blob:none --sparse --reference-if-able <cache>
+```
+
+同时设置 `GIT_LFS_SKIP_SMUDGE=1` 并启用 sparse index。任务 workspace 删除时保留共享 object cache；只为明确需要的路径获取 LFS 对象。
+
+### 5.5 TAPD Story 与 Bug 的不同交接边界
+
+Story：
+
+- 自动路由只覆盖 `status_4` 和 `developing`。
+- 成功 push、SHA 校验和 workpad 交接后，通过 typed tracker tool 移动到 `status_5` 人工评审。
+- `merging`、`rework` 为人工等待，完成态为 `status_6`；需求主任务还支持 `status_8`。
+
+Bug：
+
+- 仅当负责人匹配、状态位于 `new`/`reopened` 且 `AI特殊工作流=接受/处理` 时参与派发。
+- 执行前读取包含评论的 snapshot，逐项复核所有 `### Confusions`；历史记录的存在本身不构成阻塞。
+- 仍存在的 Confusion 要把完整当前证据写入 canonical workpad 后停止；Maestro 将 `AI特殊工作流` 更新为 `AI异常` 并抑制重试。
+- Confusion 已消失时，在 workpad 中标记 resolved 并继续。
+- 成功交付后调用 `tracker.complete_ai_workflow`，在状态仍有效且值仍为 `接受/处理`（或已幂等为 `AI已解决`）时写入 `AI已解决`。
+- Bug 状态不改变。typed-tool blocker 等异常退出路径由 Orchestrator 尝试写入 `AI异常`；写入成功或失败均产生事件。
+
+### 5.6 目标运行配置
 
 ```yaml
 repo:
@@ -145,265 +178,233 @@ repo:
     work_prefix: $SOURCE_REPO_BRANCH_WORK_PREFIX
   provider:
     kind: git
+    options:
+      remote_code_search: gitlab
+      gitlab_api_base_url: $GITLAB_API_BASE_URL
+      gitlab_project_id: $GITLAB_PROJECT_ID
+
+tracker:
+  provider:
+    platform:
+      bug_ai_workflow:
+        field: $TAPD_BUG_AI_WORKFLOW_FIELD
+        accepted_value: 接受/处理
+        resolved_value: AI已解决
+        exception_value: AI异常
+        active_states: [new, reopened]
 ```
 
-PowerShell 环境变量：
+关键环境变量：
 
 ```powershell
 $env:TAPD_API_USER="<TAPD API 用户>"
 $env:TAPD_API_PASSWORD="<TAPD API 密码>"
 $env:TAPD_WORKSPACE_ID="<TAPD 项目 ID>"
+$env:TAPD_ASSIGNEE="<允许派发的 TAPD 用户显示名>"
+$env:TAPD_BUG_AI_WORKFLOW_FIELD="custom_field_<实际字段>"
 
 $env:SOURCE_REPO_URL="git@gitlab-ee.funplus.io:koa-client-code/koa-client-code.git"
-$env:SOURCE_REPO_BASE_BRANCH="master" # 2026-09-08 通过 ls-remote --symref 确认
+$env:SOURCE_REPO_BASE_BRANCH="master"
 $env:SOURCE_REPO_BRANCH_WORK_PREFIX="maestro/"
+
+$env:GITLAB_API_TOKEN="<仅需 read_api 权限>"
+# 标准 SSH remote 可自动推导，非标准部署或需要覆盖时再设置：
+$env:GITLAB_API_BASE_URL="https://gitlab-ee.funplus.io/api/v4"
+$env:GITLAB_PROJECT_ID="koa-client-code/koa-client-code"
 ```
 
-不需要：
+`GITLAB_API_TOKEN` 必须保存在 Maestro 服务环境。`tapd/git/codex` 的 Codex 命令显式通过 `shell_environment_policy.exclude` 排除该变量。
 
-```text
-GITLAB_TOKEN
-SOURCE_REPO_PROVIDER_REPOSITORY
-SYMPHONY_REPO_PROVIDER_API_BASE_URL
-SYMPHONY_REPO_PROVIDER_WEB_BASE_URL
-```
-
-## 6. Requirements
+## 6. Requirements and Current Status
 
 ### 6.1 Must-Have（P0）
 
-#### P0-1：Git SSH 准备
+#### P0-1：Git SSH 与大仓库准备
 
-工作项：
+- [x] `git`、`ssh`、Host Key、非交互 SSH Key、提交者身份和网络预检完成。
+- [x] `ssh -T` 与 `git ls-remote` 验证通过。
+- [x] 在 `maestro/git-smoke-20260908-1507` 完成 clone、commit、push 和远端 SHA 校验。
+- [x] blobless sparse clone 验证通过；历史记录约 13 秒、约 119 MB，替代超过 3 分钟仍未完成的普通 shallow clone。
+- [x] 使用共享 object cache、sparse index 和按需 LFS 策略。
 
-- [x] Maestro 运行环境安装可用的 `git` 和 `ssh`。
-- [x] 为 Maestro 运行账号配置专用 SSH Key。
-- [x] 当前 SSH 公钥已具备目标仓库读取和工作分支写入权限。
-- [x] 将 `gitlab-ee.funplus.io` 的 SSH Host Key 加入可信 `known_hosts`。
-- [x] SSH 凭证可供非交互 Maestro 进程使用；无需运行时输入私钥口令。
-- [x] 配置提交者 `user.name` 和 `user.email`。
-- [x] 确认网络、DNS、VPN、防火墙和 SSH 端口可用。
+#### P0-2：Git Provider 与只读远程搜索
 
-验收标准：
+- [x] 注册 `git` kind 和 `SymphonyElixir.RepoProvider.Git.Adapter`。
+- [x] Adapter 只声明 `:code_search`，不声明 MR/review/checks/merge 能力。
+- [x] 实现 GitLab blob search、路径过滤、结果上限、错误规范化和 Token 脱敏。
+- [x] `repo_remote_search` 只在 `remote_code_search: gitlab` 配置下出现。
+- [x] Agent shell 不包含 `GITLAB_API_TOKEN`。
 
-- [x] `ssh -T git@gitlab-ee.funplus.io` 能完成认证，不出现交互式 Host Key 或密码提示。
-- [x] `git ls-remote git@gitlab-ee.funplus.io:koa-client-code/koa-client-code.git` 成功。
-- [x] 在测试分支执行一次 clone、commit、push 和远端 SHA 校验成功。
-- [x] Maestro 对默认分支没有直接 push 要求，`maestro/` 工作分支前缀符合项目策略。
+#### P0-3：稀疏展开与必需工具门禁
 
-验证记录：常规 shallow clone 在等待超过 3 分钟后人工中止；目标仓库约 146 GB，改用 Repo Core 的 blobless sparse clone（`--depth 1 --filter blob:none --sparse`，并设置 `GIT_LFS_SKIP_SMUDGE=1`）后约 13 秒完成，占用约 119 MB，检出 `master` 且 `remote.origin.promisor=true`。该 clone 验证与此前基于 `master` 的空 commit、`maestro/git-smoke-20260908-1507` 分支 push 和远端 SHA 一致性验证共同完成此项验收。
-
-#### P0-2：零能力 `git` Provider
-
-工作项：
-
-- [x] 在 Repo Provider kinds 中增加 `git` 和显示名称 `Git`。
-- [x] 新增 `SymphonyElixir.RepoProvider.Git.Adapter`。
-- [x] Adapter 实现 `kind/0`、`defaults/0`、`validate_config/1` 和 `capabilities/0`。
-- [x] `capabilities/0` 返回空列表，且不声明任何 MR、review、checks 或 merge 回调。
-- [x] 在默认 Registry 中注册 `git` Adapter。
-
-验收标准：
-
-- [x] `repo.provider.kind: git` 能通过配置校验。
-- [x] 选择 `git` Provider 时不会生成 Repo Provider change-proposal typed tools。
-- [x] 启动和运行过程中不会检查 `gh`、`glab` 或 GitLab API Token。
-
-#### P0-3：`tapd/git/codex` 模板
-
-工作项：
-
-- [x] 基于 `tapd/github/codex` 新增 Git-only 模板。
-- [x] 设置 `change_proposal: false` 和 `typed_repo_tools: false`。
-- [x] 设置 `repo.provider.kind: git`。
-- [x] 从 `active_states` 删除 `merging` 和其他不应自动运行的人工状态。
-- [x] 删除 GitHub Provider Notes 和 GitHub 专属前置条件。
-- [x] 不包含 MR 创建、评论、checks、land 或 merge 指令。
-- [x] 在 Template Catalog 和模板 README 中注册 `tapd/git/codex`。
-- [x] 大仓库初始化默认使用 blobless sparse clone，并支持按需扩展 sparse checkout 和显式获取所需 LFS 路径。
-- [x] 将 `merging` 和 `rework` 路由策略设为人工等待，避免未激活状态被默认自动派发策略拒绝。
-
-验收标准：
-
-- [x] `--template tapd/git/codex` 可以被发现、渲染和加载。
-- [x] 生成的 tool inventory 包含 `repo_checkout`、`repo_diff`、`repo_commit`、`repo_push`。
-- [x] 生成的 tool inventory 不包含 change-proposal、review、checks 和 merge 工具。
-- [x] 渲染后的提示词不包含要求创建 GitHub PR 或 GitLab MR 的指令。
+- [x] 提供 `repo_sparse_add`，拒绝仓库根目录、绝对路径、路径穿越和 ref 中不存在的目录。
+- [x] 模板要求先远程搜索、后最小化 sparse add，再读取或编辑代码。
+- [x] 启动时 fail-fast 校验 remote search、sparse add 和 Bug AI completion 能力。
+- [x] inventory 不包含任何 change-proposal/review/checks/merge 工具。
 
 #### P0-4：Git-only 执行生命周期
 
-Agent 主流程必须是：
+标准流程：
 
-1. 读取 TAPD 工作项和 canonical workpad。
-2. 同步默认分支。
-3. 创建工作项专属分支，不直接在默认分支工作。
-4. 修改代码并运行目标仓库要求的测试。
-5. 使用 `repo_diff` 验证预期变更。
-6. 使用 `repo_commit` 提交。
-7. 使用 `repo_push` 推送并验证 `published_head_sha == head_sha`。
-8. 在 TAPD workpad 记录仓库、分支、commit SHA、测试结果和建议 MR 标题/说明。
-9. 将工作项移动到人工评审状态后停止。
+1. 读取 TAPD snapshot、评论和 canonical workpad。
+2. Bug 先复核所有 `### Confusions`；当前阻塞存在则记录证据并停止，由 Maestro 写 `AI异常`。
+3. 记录复现或基线，校准计划、验收标准和验证清单。
+4. 从 `代码分支` 或 fallback base 创建符合前缀规则的专属工作分支。
+5. `repo_remote_search` 定位，`repo_sparse_add` 展开最小目录。
+6. 修改并运行目标仓库要求的验证。
+7. `repo_diff` 开启 whitespace check 并确认只包含预期变更。
+8. `repo_commit` 后通过 `repo_push` 发布并校验 SHA。
+9. workpad 记录 repo、branch、SHA、验证结果、`suggested_mr_title` 和 `suggested_mr_description`。
+10. Story 移动到人工评审；Bug 调用 `tracker.complete_ai_workflow` 写 `AI已解决`，两者随后立即停止。
 
-工作项：
+状态：
 
-- [x] 新增 Git-only lifecycle partial，或在模板中提供等价的独立执行说明。
-- [x] 明确禁止调用 Repo Provider change-proposal 工具。
-- [x] 明确禁止调用会创建 PR 的现有 `push` skill。
-- [x] 优先使用 `repo_push` typed tool；仅在 inventory 不可用时使用 `bin/repo push`。
-- [x] push 被拒绝时区分非 fast-forward、权限、认证和保护分支错误。
-- [x] 非 fast-forward 时允许按现有 Repo Core 流程同步并重新验证；认证和权限错误必须停止并报告。
-
-验收标准：
-
-- [ ] 成功路径在 push 和 TAPD 人工交接后停止。
-- [x] 失败路径不会为了绕过权限而重写 remote、切换协议或使用强制 push。
-- [x] 默认禁止 `--force`；只有明确发生历史重写时才能使用 `--force-with-lease`。
-- [x] 不会直接提交或推送到 `main` 等默认分支。
+- [x] 生命周期、分支保护、push 错误策略和人工 MR 边界已写入模板 partial。
+- [x] canonical workpad 在 workspace root 镜像为 `.symphony-tapd-workpad.md`，不得进入 `repo/` 或提交。
+- [x] workpad 已要求生成供人工使用的 MR 标题和说明。
+- [x] Bug success/exception 字段闭环及废弃字段禁用规则已实现。
+- [ ] 使用真实候选任务完成一次完全由 Maestro typed tools 驱动的成功路径灰度。
 
 #### P0-5：测试与文档
 
-工作项：
+- [x] Git Adapter contract/registry/config 测试。
+- [x] GitLab code search 请求、响应、错误和 Token 脱敏测试。
+- [x] `repo_sparse_add` 和 Repo inventory 正反向测试。
+- [x] 模板发现、渲染、配置、必需能力和不含 MR 工具的测试。
+- [x] TAPD Bug `接受/处理`、`AI已解决`、`AI异常`、候选过滤和完成工具测试。
+- [x] 本地 bare Git clone/branch/commit/push/published SHA 测试。
+- [x] Repo Provider、operations、testing 和模板文档已同步。
+- [ ] 2026-09-15 当前工作树变更完成定向测试和完整质量门禁复验。
 
-- [x] 增加 `git` Adapter contract/registry/config 测试。
-- [x] 增加模板发现、渲染和 profile requirements 测试。
-- [x] 增加 dynamic tool inventory 正向和负向断言。
-- [x] 增加 Git-only 提示词中不存在 PR/MR/merge 指令的测试。
-- [x] 使用本地 bare Git 仓库测试 clone、branch、commit、push 和 published SHA，不依赖 GitLab API。
-- [x] 更新模板 README、Repo Provider 文档和测试文档。
-
-验收标准：
-
-- [x] 相关定向测试通过。
-- [x] `make all` 通过。
-- [x] `make secret-scan` 通过。
-- [x] 只在获得显式授权后向真实业务仓库的独立工作分支执行写入 smoke。
-
-`make all` 记录：2026-09-09 最终完整命令通过；全量测试为 2493 tests、0 failures、19 skipped，覆盖率 72.98%，Dialyzer `Total errors: 0`。此前 EventStore 队列压力、reconciliation 异步事件顺序及 prompt builder 全局状态测试曾非确定失败；对应测试在原始 Maestro 或隔离重复运行中也可复现/通过，最终完整门禁已通过。
-
-TAPD 只读 smoke 记录：模板配置校验通过；2026-09-09 使用更新后的 `.env.gitlab.local` 凭证重跑 `GET /quickstart/testauth`，返回 HTTP 200，TAPD API 认证通过。未执行任何工作项写操作。
-
-TAPD 候选任务只读验证：2026-09-09 根据 `/workflows/last_steps` 返回值修正 5 种工作项类型的终态后，`fetch_candidate_issues` 成功返回 39 个 `status_4` 候选项，未执行 Agent、TAPD 写入或 Git 写入。正式重启前必须确认应启用的工作项类型及历史候选项处理范围，避免批量误触发。Dashboard LiveView socket 路径也已修正为运行时注入的 `/live`。
-
-TAPD 启动性能修正：启动终态清理仅查询 `SYMPHONY_WORKSPACE_ROOT` 下现存的 `TAPD-*` 任务目录，并禁用该清理查询的依赖关系补全；不再分页读取全部历史完成任务后逐项调用 `get_time_relative_stories`。
+历史验证记录：2026-09-09 `make all` 通过，2493 tests、0 failures、19 skipped，覆盖率 72.98%，Dialyzer `Total errors: 0`；`make secret-scan` 通过。该记录早于 2026-09-15 的 Bug AI 异常闭环调整，不能替代当前复验。
 
 ### 6.2 Nice-to-Have（P1）
 
-- [ ] 新增独立 `publish-branch` workspace skill，只负责验证、push 和远端 SHA 校验，不创建 PR。
-- [ ] 在 Dashboard 展示最后推送的分支和 commit SHA，但不查询 GitLab API。
-- [ ] 自动生成供人工复制的 MR 标题和描述文本，并记录在 TAPD workpad。
-- [ ] 为 SSH Key、Host Key、DNS、VPN 和权限错误提供更明确的诊断提示。
+- [ ] 新增独立 `publish-branch` workspace skill，仅负责验证、push 和 SHA 校验。
+- [ ] Dashboard 展示最近发布的工作分支和 commit SHA，且不额外查询 GitLab API。
+- [ ] 为 SSH Key、Host Key、DNS、VPN、GitLab search 5xx 和权限错误提供更明确诊断。
+- [ ] 为 object cache 增加容量、最近更新时间和安全清理可观测性。
 
 ### 6.3 Future Considerations（P2）
 
-- [ ] 如果后续需要自动创建 MR，再单独启动完整 GitLab Provider 计划。
-- [ ] 如果后续需要读取评审反馈、Pipeline 或审批，再按能力逐项增加 GitLab API。
-- [ ] 如果后续需要自动合并，必须另行定义审批、checks、冲突和保护分支门禁。
+- [ ] 如需自动创建 MR，单独启动完整 GitLab Provider 计划。
+- [ ] 如需评审反馈、Pipeline 或审批，按最小权限逐项增加能力。
+- [ ] 如需自动合并，另行定义审批、checks、冲突和保护分支门禁。
 
-## 7. End-to-End Acceptance Scenario
+## 7. End-to-End Acceptance Scenarios
 
-使用专用测试分支或测试仓库执行：
+### 7.1 共用 Git 路径
 
-1. TAPD 测试工作项进入规划状态。
-2. Maestro 使用 `tapd/git/codex` 创建隔离 workspace。
-3. `after_create` 通过 SSH 将目标仓库克隆到 `repo/`。
-4. Maestro 同步 `origin/master` 并创建带 `maestro/` 前缀的工作分支。
-5. Codex 完成一项无风险测试修改并运行仓库验证。
-6. Maestro commit 并 push 工作分支。
-7. Maestro 验证远端分支 SHA 与本地 HEAD 一致。
-8. TAPD workpad 记录分支、SHA、测试结果和人工 MR 建议文本。
-9. TAPD 工作项进入人工评审状态，Maestro 停止处理。
-10. 人工创建 MR、处理评论、观察 Pipeline、合并并关闭 TAPD 工作项。
+1. Maestro 以 `tapd/git/codex` 创建隔离 workspace，并确认三项必需能力可用。
+2. `after_create` 准备共享 object cache，通过 SSH 对工作项开发基线执行 blobless sparse clone。
+3. Agent 使用 `repo_remote_search` 和明确的 development ref 定位文件。
+4. Agent 通过 `repo_sparse_add` 只展开需要的目录。
+5. Agent 在 `maestro/` 工作分支完成修改和验证。
+6. Agent 依次执行 `repo_diff`、`repo_commit`、`repo_push`，并确认 published SHA 等于 HEAD。
+7. canonical workpad 记录完整交接信息。
 
-整个自动化过程中不得调用 GitHub/GitLab MR、评论、Pipeline、审批或合并 API。
+### 7.2 Story 成功路径
+
+1. Story 处于可派发规划/开发状态并匹配负责人。
+2. 完成共用 Git 路径。
+3. Maestro 将 Story 移到 `status_5` 人工评审并停止。
+4. 人工创建 MR、处理评论、观察 Pipeline、审批和合并。
+
+### 7.3 Bug 成功路径
+
+1. Bug 处于 `new`/`reopened`，匹配负责人，且 `AI特殊工作流=接受/处理`。
+2. 评论中的历史 `Confusions` 均已复核；不存在当前阻塞，或已在 workpad 标记为 resolved。
+3. 完成共用 Git 路径。
+4. `tracker.complete_ai_workflow` 将 `AI特殊工作流` 写为 `AI已解决`。
+5. Bug 原状态不变；任务 workspace 删除，共享 object cache 保留。
+
+### 7.4 Bug Confusion/异常路径
+
+1. 执行前发现某条 `Confusions` 描述的问题当前仍存在。
+2. canonical workpad 记录完整当前证据，Agent 停止继续修改。
+3. Maestro 将 `AI特殊工作流` 写为 `AI异常`、抑制重试并结束该次处理。
+4. 全流程不读取或写入已废弃的 `AI是否遇到异常` 字段。
+
+所有场景中，唯一允许的 GitLab HTTP API 是 `repo_remote_search` 的只读 blob search；不得调用 MR、评论、Pipeline、审批或合并 API。
 
 ## 8. Success Metrics
 
 ### Leading Indicators
 
-- Git-only 模板的发现、渲染和配置测试通过率：100%。
-- 测试仓库 clone/branch/commit/push/远端 SHA 校验连续 10 次成功率：100%。
-- 自动化创建 MR、调用 Provider API或尝试自动合并的次数：0。
-- 直接推送默认分支的次数：0。
+- 模板发现、渲染、配置和必需能力测试通过率：100%。
+- Repo inventory 与预期六个工具完全一致。
+- GitLab Token 出现在 Agent shell、tool schema、结果或错误日志中的次数：0。
+- 直接推送开发基线/最终集成分支或普通 force push 的次数：0。
+- Bug 成功后错误改变状态的次数：0；应只更新 `AI特殊工作流`。
+- 当前仍存在的 Confusion 未进入 `AI异常` 的次数：0。
 
 ### Lagging Indicators
 
-- 上线后首月 Git-only 工作流导致的错误远端写入：0。
-- 上线后首月 SSH 私钥或敏感认证信息泄漏事件：0。
-- 成功 push 后因缺少分支/SHA/测试信息而无法人工创建 MR 的比例：低于 5%。
+- 上线后首月错误远端写入：0。
+- SSH 私钥、TAPD 凭证或 GitLab Token 泄漏事件：0。
+- 成功 push 后因缺少分支、SHA、验证或 MR 建议文本而无法人工接管的比例低于 5%。
+- 被 `AI已解决`/`AI异常` 过滤的 Bug 被重复派发次数：0。
 
 ## 9. Admin and External Dependencies
 
-- [x] 确认 `koa-client-code/koa-client-code` 的真实默认分支为 `master`。
-- [x] 确认允许的自动化分支前缀为 `maestro/`。
-- [x] 为 Maestro 运行账号提供目标仓库读取和工作分支写入权限。
-- [x] 当前 SSH 身份可非交互认证，Host Key 已可信，且已确认为 Maestro 正式专用 Key。
-- [x] 确认 Maestro 运行环境能访问 GitLab SSH 服务。
-- [x] 已在独立工作分支 `maestro/git-smoke-20260908-1507` 完成首次写入验收。
-- [x] 确认 TAPD 中“人工评审”和“完成”对应的原始状态值分别为 `status_5` 和 `status_6`；需求主任务类型 `1154044737001000037` 还有显示名为 `Online` 的第二完成终态 `status_8`。
-- [x] 确认人工评审反馈回到 TAPD 后使用 `developing` 状态重新触发开发。
+- [x] 目标仓库默认分支为 `master`，允许 `maestro/` 工作分支。
+- [x] Maestro 专用 SSH 身份具备读取和工作分支写权限，Host Key 已可信。
+- [x] TAPD API 认证健康检查已通过，且通过 `TAPD_ASSIGNEE` 限制派发范围。
+- [x] Story 人工评审状态为 `status_5`，完成状态为 `status_6`；需求主任务还支持 `status_8`。
+- [ ] 配置真实的 `TAPD_BUG_AI_WORKFLOW_FIELD`，并确认字段选项精确包含 `接受/处理`、`AI已解决`、`AI异常`。
+- [ ] 配置最小权限 `GITLAB_API_TOKEN`（`read_api`），并验证目标 GitLab 实例的 blob search 可用。
+- [ ] 正式重启前再次确认启用的工作项类型和历史候选范围，避免批量误触发。
 
-正式环境配置记录：`elixir/.env.gitlab.local` 中 TAPD 凭证变量、Workspace、目标仓库、`master` 默认分支和 `maestro/` 工作分支前缀均已填写；该文件保持本地私密且不受 Git 跟踪。2026-09-09 使用更新后的凭证执行只读健康检查，`GET /quickstart/testauth` 返回 HTTP 200，TAPD 凭证已通过运行时有效性验证。
+凭证应保存在外部 `0600` 环境文件中，默认路径为 `/home/admin2/workspace_other/Env/symphony/tapd-gitlab.env`；可通过 `SYMPHONY_TAPD_GITLAB_ENV_FILE` 覆盖。`.env.gitlab.local` 只保存外部文件指针或非敏感本地配置，不应承载长期凭证。
 
-本地一键启动命令：`./elixir/bin/start-tapd-gitlab`。该脚本自动加载上述私密环境文件，要求配置 `TAPD_ASSIGNEE`，仅派发 `owner` 匹配该 TAPD 显示名的任务，并默认仅监听 `127.0.0.1:4000`。
+本地启动命令：`./elixir/bin/start-tapd-gitlab`。
+本地重启命令：`./elixir/bin/restart-tapd-gitlab`。
 
-本地一键重启命令：`./elixir/bin/restart-tapd-gitlab`。该脚本先构建最新可执行程序，再仅关闭占用配置端口且命令行匹配当前项目 `tapd/git/codex` 运行实例的进程，端口释放后以前台方式启动新实例；如端口属于其他程序则拒绝终止。
-
-无需管理员提供 GitLab API User、API Password、Access Token、GitLab 版本或 License Tier。
-
-## 10. Open Questions
+## 10. Remaining Decisions
 
 ### Blocking
 
-1. **[已解决]** 默认分支为 `master`（2026-09-08 通过 Git SSH `ls-remote --symref` 确认）。
-2. **[已解决]** 允许 Maestro 创建 `maestro/` 前缀的工作分支。
-3. **[已解决]** 当前 SSH Key 已确认为 Maestro 正式专用 Key，并具备目标仓库工作分支写权限。
-4. **[已解决]** 人工评审为 `status_5`，完成为 `status_6`，需求主任务类型 `1154044737001000037` 的另一完成终态为 `status_8` (`Online`)，评审返工后使用 `developing` 重新触发开发。
-5. **[已解决]** 首次真实 push 验收使用 `koa-client-code/koa-client-code` 的 `maestro/git-smoke-20260908-1507` 分支。
-6. **[已解决]** 已更新 `.env.gitlab.local` 中匹配的 TAPD API 用户和 API Token；2026-09-09 只读 `testauth` 返回 HTTP 200。
+1. **[待验证]** 真实 GitLab 实例的 `scope=blobs` 搜索是否对目标项目、目标 ref 和当前 `read_api` Token 稳定返回；需要纳入灰度前预检。
+2. **[待验证]** TAPD `AI特殊工作流` 的真实 custom field 名及三个选项值是否与配置完全一致。
+3. **[待执行]** 选择一个明确授权的 Story 和一个 Bug，分别完成 typed-tool E2E；Bug 场景还需覆盖 Confusion 存在/不存在分支。
 
 ### Non-Blocking
 
-1. **[工程]** 是否在 P0 同时新增 `publish-branch` skill？默认先直接使用 `repo_push` typed tool。
-2. **[产品/项目管理员]** 是否需要在 TAPD workpad 中生成固定格式的 MR 标题和描述？
+1. **[工程]** 是否增加独立 `publish-branch` skill；当前 `repo_push` 已满足 P0。
+2. **[运维]** object cache 的保留期和清理策略。
 
-## 11. Timeline Considerations
+## 11. Remaining Rollout Order
 
-在 SSH 和 TAPD 状态信息及时就绪的情况下：
+1. 运行当前工作树的定向测试、架构测试、`make all` 和 secret scan。
+2. 验证外部环境文件权限、GitLab `read_api` Token、API endpoint/project 推导和搜索结果。
+3. 在授权测试 Bug 上验证 candidate 过滤和 Confusions 前置检查，不存在阻塞时完成成功路径。
+4. 在单独授权 Bug 上验证当前 Confusion 或 typed-tool blocker 会写入 `AI异常` 且不重试。
+5. 在授权 Story 上验证 push 后进入人工评审。
+6. 保持 `max_concurrent_agents: 1` 灰度，观察事件、workspace 清理和 object cache。
+7. 稳定后再扩大 TAPD 工作项类型或候选范围。
 
-| 阶段 | 范围 | 估算 |
-|---|---|---:|
-| Phase 0 | SSH、网络、默认分支和 TAPD 状态预检 | 0.5 个工作日 |
-| Phase 1 | `git` Adapter、Registry 和配置测试 | 0.5 个工作日 |
-| Phase 2 | `tapd/git/codex` 模板、Git-only 生命周期和模板测试 | 0.5～1 个工作日 |
-| Phase 3 | 本地 Git E2E、测试分支 smoke、文档和门禁 | 0.5～1 个工作日 |
+## 12. Rollback
 
-总预计：1～3 个工作日。该范围不依赖 GitLab API 开通流程。
+- 停止 `tapd/git/codex` 实例即可阻止新任务派发。
+- 撤销 GitLab API Token 只会关闭远程搜索能力；启动门禁会阻止缺少必需工具的工作流继续运行。
+- 撤销 SSH Key 可阻止后续 clone/fetch/push。
+- 回滚不会自动删除已推送的远端分支，也不会修改人工创建的 MR、Pipeline、审批或合并状态。
+- 已写入的 `AI已解决` 或 `AI异常` 不自动回滚；如属误写，由 TAPD 管理员按审计记录人工恢复。
+- 删除任务 workspace 时不得同时删除仍被其他 clone 引用的共享 object cache。
 
-## 12. Suggested Implementation Order
-
-1. 确认默认分支、分支前缀、TAPD 状态和测试仓库。
-2. 完成 SSH 认证、Host Key、提交身份和 `git ls-remote` 预检。
-3. 新增零能力 `git` Provider 并完成 Registry/config 测试。
-4. 新增 `tapd/git/codex` 模板和 Git-only lifecycle。
-5. 增加模板和 dynamic tool inventory 测试。
-6. 使用本地 bare 仓库完成无外部依赖的 Git E2E。
-7. 在测试分支执行一次真实 GitLab push smoke。
-8. 通过质量门禁后，先以单并发在目标项目灰度。
-
-## 13. Rollout and Rollback
-
-- 新增 `git` kind 和 `tapd/git/codex` alias，不改变 GitHub、CNB、Memory 的现有行为。
-- 首次灰度保持 `max_concurrent_agents: 1`，只处理明确标记的 TAPD 测试工作项。
-- 回滚时停止使用 `tapd/git/codex` 并移除/禁用 Maestro 的 SSH Key。
-- 回滚不会自动删除已经推送的远端分支；由项目管理员决定保留或删除。
-- 因为没有 GitLab API 操作，回滚不涉及 MR、评论、审批、Pipeline 或合并状态修复。
-
-## 14. References
+## 13. References
 
 - Repo Core facade：`lib/symphony_elixir/repo.ex`
 - Repo Core typed tools：`lib/symphony_elixir/repo/tool_executor.ex`
-- Coding PR Delivery profile options：`lib/symphony_elixir/workflow/extensions/coding_pr_delivery/profile/options.ex`
-- Coding PR Delivery required capabilities：`lib/symphony_elixir/workflow/extensions/coding_pr_delivery/profile/capabilities.ex`
-- Repo Provider registry：`lib/symphony_elixir/repo_provider/registry.ex`
-- 现有 TAPD/GitHub 参考模板：`priv/workflow_extensions/coding_pr_delivery/templates/tapd/github/codex.md`
-- 现有 push skill：`priv/workspace_automation/skills/repo/push/SKILL.md`
+- Git Adapter：`lib/symphony_elixir/repo_provider/git/adapter.ex`
+- GitLab read-only search：`lib/symphony_elixir/repo_provider/gitlab/code_search.ex`
+- Repo Provider typed tools：`lib/symphony_elixir/repo_provider/tool_executor.ex`
+- 必需能力启动门禁：`lib/symphony_elixir/config/tapd_git_codex_capabilities.ex`
+- TAPD Bug AI workflow：`lib/symphony_elixir/tracker/tapd/bug_ai_workflow.ex`
+- TAPD typed tools：`lib/symphony_elixir/tracker/tapd/tool_executor/typed_tools.ex`
+- Worker 异常收尾：`lib/symphony_elixir/orchestrator/worker_exit.ex`
+- Git-only 模板：`priv/workflow_extensions/coding_pr_delivery/templates/tapd/git/codex.md`
+- Git-only lifecycle：`priv/workflow_extensions/coding_pr_delivery/templates/_partials/tracker/tapd_git_only_execution_lifecycle.md`
+- Repo Provider 文档：`docs/repo_provider.md`
+- 运维文档：`docs/operations.md`
+- 测试文档：`docs/testing.md`
