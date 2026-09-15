@@ -160,7 +160,7 @@ Bug：
 
 - 仅当负责人匹配、状态位于 `new`/`reopened` 且 `AI特殊工作流=接受/处理` 时参与派发。
 - 执行前读取包含评论的 snapshot，逐项复核所有 `### Confusions`；历史记录的存在本身不构成阻塞。
-- 仍存在的 Confusion 要把完整当前证据写入 canonical workpad 后停止；Maestro 将 `AI特殊工作流` 更新为 `AI异常` 并抑制重试。
+- 仍存在的 Confusion 要通过 `tracker.upsert_workpad` 的 `outcome: blocked_confusions` 把完整当前证据写入 canonical workpad；该结构化信号会在当前 turn 结束时立即停止 worker，由 Maestro 将 `AI特殊工作流` 更新为 `AI异常` 并抑制重试，不再等待 `max_turns` 耗尽。
 - Confusion 已消失时，在 workpad 中标记 resolved 并继续。
 - 成功交付后调用 `tracker.complete_ai_workflow`，在状态仍有效且值仍为 `接受/处理`（或已幂等为 `AI已解决`）时写入 `AI已解决`，随后回读 Bug；只有回读确认后才以调用方提供的最终 body 更新原 canonical workpad。
 - 人工新增修改意见并把字段重置为 `接受/处理` 后，Bug 可重新派发。新一轮按未处理的人类评论 ID 建立 `Rework Round N`，继续原 workpad 和原已发布工作分支。
@@ -364,12 +364,12 @@ $env:GITLAB_PROJECT_ID="koa-client-code/koa-client-code"
 - [x] Maestro 专用 SSH 身份具备读取和工作分支写权限，Host Key 已可信。
 - [x] TAPD API 认证健康检查已通过，且通过 `TAPD_ASSIGNEE` 限制派发范围。
 - [x] Story 人工评审状态为 `status_5`，完成状态为 `status_6`；需求主任务还支持 `status_8`。
-- [ ] 配置真实的 `TAPD_BUG_AI_WORKFLOW_FIELD`，并确认字段选项精确包含 `接受/处理`、`AI已解决`、`AI异常`。
+- [x] `TAPD_BUG_AI_WORKFLOW_FIELD=custom_field_6`，字段选项已确认包含 `接受/处理`、`AI已解决`、`AI异常`。
 - [x] `TAPD_BUG_AI_MODEL_LEVEL_FIELD=custom_field_7`，字段选项已确认为 `low`、`medium`、`high`、`xhigh`。
 - [ ] 配置最小权限 `GITLAB_API_TOKEN`（`read_api`），并验证目标 GitLab 实例的 blob search 可用。
 - [ ] 正式重启前再次确认启用的工作项类型和历史候选范围，避免批量误触发。
 
-凭证应保存在外部 `0600` 环境文件中，默认路径为 `/home/admin2/workspace_other/Env/symphony/tapd-gitlab.env`；可通过 `SYMPHONY_TAPD_GITLAB_ENV_FILE` 覆盖。`.env.gitlab.local` 只保存外部文件指针或非敏感本地配置，不应承载长期凭证。Codex 模型通过 `SYMPHONY_AGENT_MODEL` 传给原生 `thread/start.model`；`AI模型等级` 通过 `TAPD_BUG_AI_MODEL_LEVEL_FIELD` 读取，按 Bug 分别把 `low`、`medium`、`high`、`xhigh` 传给原生 `turn/start.effort`。字段为空或非法时 effort 使用 `medium`，两项均无需修改核心 workflow 命令。
+凭证应保存在外部 `0600` 环境文件中，默认路径为 `/home/admin2/workspace_other/Env/symphony/tapd-gitlab.env`；可通过 `SYMPHONY_TAPD_GITLAB_ENV_FILE` 覆盖。`.env.gitlab.local` 只保存外部文件指针或非敏感本地配置，不应承载长期凭证。重试运行上限也在该外部文件中通过 `SYMPHONY_MAX_RETRY_ATTEMPTS` 配置，默认值为 `3`；仅因执行槽已满而等待不会增加该计数，也不会启动模型会话。大型浅克隆仓库可通过 `SYMPHONY_WORKSPACE_HOOK_TIMEOUT_MS` 配置工作区钩子超时（建议 `300000`）；`before_run` 先比较远端与本地基线 SHA，相同则跳过 fetch。写入 `AI异常` 前后均回读 Bug，且只有字段仍为 `接受/处理`、状态仍允许 AI 执行时才写入，禁止覆盖 `AI已解决` 或其他人工值。Codex 模型通过 `SYMPHONY_AGENT_MODEL` 传给原生 `thread/start.model`；`AI模型等级` 通过 `TAPD_BUG_AI_MODEL_LEVEL_FIELD` 读取，按 Bug 分别把 `low`、`medium`、`high`、`xhigh` 传给原生 `turn/start.effort`。字段为空或非法时 effort 使用 `medium`，两项均无需修改核心 workflow 命令。
 
 本地启动命令：`./elixir/bin/start-tapd-gitlab`。
 本地重启命令：`./elixir/bin/restart-tapd-gitlab`。
@@ -379,8 +379,7 @@ $env:GITLAB_PROJECT_ID="koa-client-code/koa-client-code"
 ### Blocking
 
 1. **[待验证]** 真实 GitLab 实例的 `scope=blobs` 搜索是否对目标项目、目标 ref 和当前 `read_api` Token 稳定返回；需要纳入灰度前预检。
-2. **[待验证]** TAPD `AI特殊工作流` 的真实 custom field 名及三个选项值是否与配置完全一致。
-3. **[待执行]** 选择一个明确授权的 Story 和一个 Bug，分别完成 typed-tool E2E；Bug 场景还需覆盖 Confusion 存在/不存在分支。
+2. **[待执行]** 选择一个明确授权的 Story 和一个 Bug，分别完成 typed-tool E2E；Bug 场景还需覆盖 Confusion 存在/不存在分支。
 
 ### Non-Blocking
 

@@ -296,6 +296,7 @@ defmodule SymphonyElixir.TestSupport do
           repo_provider_required_pr_label: nil,
           max_concurrent_agents: 10,
           max_turns: 20,
+          max_retry_attempts: 3,
           max_retry_backoff_ms: 300_000,
           max_concurrent_agents_by_state: %{},
           agent_credentials_enabled: false,
@@ -385,6 +386,7 @@ defmodule SymphonyElixir.TestSupport do
 
     max_concurrent_agents = Keyword.get(config, :max_concurrent_agents)
     max_turns = Keyword.get(config, :max_turns)
+    max_retry_attempts = Keyword.get(config, :max_retry_attempts)
     max_retry_backoff_ms = Keyword.get(config, :max_retry_backoff_ms)
     max_concurrent_agents_by_state = Keyword.get(config, :max_concurrent_agents_by_state)
     agent_credentials_enabled = Keyword.get(config, :agent_credentials_enabled)
@@ -514,6 +516,7 @@ defmodule SymphonyElixir.TestSupport do
           execution: %{
             max_concurrent_agents: max_concurrent_agents,
             max_turns: max_turns,
+            max_retry_attempts: max_retry_attempts,
             max_retry_backoff_ms: max_retry_backoff_ms,
             max_concurrent_agents_by_state: max_concurrent_agents_by_state
           },
@@ -714,6 +717,7 @@ defmodule SymphonyElixir.TestSupport do
       "  execution:",
       "    max_concurrent_agents: #{yaml_value(settings.execution.max_concurrent_agents)}",
       "    max_turns: #{yaml_value(settings.execution.max_turns)}",
+      "    max_retry_attempts: #{yaml_value(settings.execution.max_retry_attempts)}",
       "    max_retry_backoff_ms: #{yaml_value(settings.execution.max_retry_backoff_ms)}",
       "    max_concurrent_agents_by_state: #{yaml_value(settings.execution.max_concurrent_agents_by_state)}",
       agent_credentials_yaml(settings.credentials),

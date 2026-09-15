@@ -82,6 +82,7 @@ repo:
       gitlab_api_base_url: $GITLAB_API_BASE_URL
       gitlab_project_id: $GITLAB_PROJECT_ID
 hooks:
+  timeout_ms: $SYMPHONY_WORKSPACE_HOOK_TIMEOUT_MS
   after_create: |
     if [ -z "${SOURCE_REPO_URL:-}" ]; then
       echo "SOURCE_REPO_URL is required" >&2
@@ -99,7 +100,15 @@ hooks:
   before_run: |
     task_base_branch="${SYMPHONY_ISSUE_BRANCH_NAME:-${SOURCE_REPO_BASE_BRANCH:-}}"
     if [ -n "$task_base_branch" ] && [ -d repo/.git ]; then
-      GIT_LFS_SKIP_SMUDGE=1 git -C repo fetch --no-tags --depth 1 origin "$task_base_branch:refs/remotes/origin/$task_base_branch"
+      local_base_sha="$(git -C repo rev-parse "refs/remotes/origin/$task_base_branch" 2>/dev/null || true)"
+      remote_base_sha="$(GIT_TERMINAL_PROMPT=0 git -C repo ls-remote --exit-code origin "refs/heads/$task_base_branch" | awk 'NR == 1 {print $1}')"
+      if [ -z "$remote_base_sha" ]; then
+        echo "Unable to resolve origin/$task_base_branch" >&2
+        exit 1
+      fi
+      if [ "$local_base_sha" != "$remote_base_sha" ]; then
+        GIT_LFS_SKIP_SMUDGE=1 GIT_TERMINAL_PROMPT=0 git -C repo fetch --no-tags --depth 1 --filter=blob:none origin "+$task_base_branch:refs/remotes/origin/$task_base_branch"
+      fi
     fi
   before_remove: |
     # Optional target-repository cleanup belongs here.
@@ -107,6 +116,7 @@ agent:
   execution:
     max_concurrent_agents: 1
     max_turns: 20
+    max_retry_attempts: $SYMPHONY_MAX_RETRY_ATTEMPTS
 agent_provider:
   kind: codex
   options:

@@ -347,18 +347,9 @@ defmodule SymphonyElixir.Orchestrator.WorkerExit do
     |> EventStore.recent_issue_events(limit: 100)
     |> Enum.any?(fn event ->
       (is_nil(run_id) or event["run_id"] == run_id or event["correlation_id"] == run_id) and
-        contains_confusion?(event)
+        event["workflow_signal"] == "blocked_confusions"
     end)
   end
-
-  defp contains_confusion?(value) when is_binary(value),
-    do: String.contains?(String.downcase(value), "confusion")
-
-  defp contains_confusion?(value) when is_map(value),
-    do: Enum.any?(value, fn {key, nested} -> contains_confusion?(key) or contains_confusion?(nested) end)
-
-  defp contains_confusion?(value) when is_list(value), do: Enum.any?(value, &contains_confusion?/1)
-  defp contains_confusion?(_value), do: false
 
   defp register_typed_tool_blocker(issue_id, running_entry, blocker) do
     attrs = %{
@@ -469,7 +460,7 @@ defmodule SymphonyElixir.Orchestrator.WorkerExit do
         |> complete_issue(issue_id)
         |> Retry.schedule(
           issue_id,
-          1,
+          Retry.next_attempt_from_running(running_entry) || 1,
           %{
             identifier: running_entry.identifier,
             delay_type: :continuation,

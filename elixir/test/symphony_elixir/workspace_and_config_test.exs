@@ -2475,6 +2475,7 @@ defmodule SymphonyElixir.WorkspaceAndConfigTest do
         execution:
           max_concurrent_agents: 10
           max_turns: 20
+          max_retry_attempts: 3
           max_retry_backoff_ms: 300000
           max_concurrent_agents_by_state: {}
       agent_provider:
@@ -2898,6 +2899,7 @@ defmodule SymphonyElixir.WorkspaceAndConfigTest do
         execution:
           max_concurrent_agents: 10
           max_turns: 20
+          max_retry_attempts: 3
           max_retry_backoff_ms: 300000
           max_concurrent_agents_by_state: {}
       agent_provider:

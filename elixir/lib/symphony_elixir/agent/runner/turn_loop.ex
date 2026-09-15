@@ -57,8 +57,22 @@ defmodule SymphonyElixir.Agent.Runner.TurnLoop do
            on_message: WorkerUpdates.message_handler(update_recipient, issue)
          ) do
       {:ok, turn_session} ->
-        case non_retryable_typed_tool_blocker(issue, run_id) do
-          %{} = blocker ->
+        case turn_blocker(issue, run_id) do
+          {:confusions, signal} ->
+            handle_turn_error(
+              {:error, {:confusions, signal}},
+              {:confusions, signal},
+              app_session,
+              workspace,
+              issue,
+              worker_host,
+              run_id,
+              turn_number,
+              max_turns,
+              turn_started_at_ms
+            )
+
+          {:typed_tool, blocker} ->
             handle_turn_error(
               {:error, {:turn_blocked, blocker}},
               {:turn_blocked, blocker},
@@ -72,7 +86,7 @@ defmodule SymphonyElixir.Agent.Runner.TurnLoop do
               turn_started_at_ms
             )
 
-          nil ->
+          :none ->
             handle_turn_result(
               turn_session,
               app_session,
@@ -90,8 +104,22 @@ defmodule SymphonyElixir.Agent.Runner.TurnLoop do
         end
 
       {:error, reason} = error ->
-        case non_retryable_typed_tool_blocker(issue, run_id) do
-          %{} = blocker ->
+        case turn_blocker(issue, run_id) do
+          {:confusions, signal} ->
+            handle_turn_error(
+              {:error, {:confusions, signal}},
+              {:confusions, signal},
+              app_session,
+              workspace,
+              issue,
+              worker_host,
+              run_id,
+              turn_number,
+              max_turns,
+              turn_started_at_ms
+            )
+
+          {:typed_tool, blocker} ->
             handle_turn_error(
               {:error, {:turn_blocked, blocker}},
               {:turn_blocked, blocker},
@@ -105,7 +133,7 @@ defmodule SymphonyElixir.Agent.Runner.TurnLoop do
               turn_started_at_ms
             )
 
-          nil ->
+          :none ->
             handle_turn_error(error, reason, app_session, workspace, issue, worker_host, run_id, turn_number, max_turns, turn_started_at_ms)
         end
     end
@@ -340,6 +368,29 @@ defmodule SymphonyElixir.Agent.Runner.TurnLoop do
   end
 
   defp continue_with_issue?(issue, _issue_state_fetcher, _opts), do: {:done, issue}
+
+  defp turn_blocker(issue, run_id) do
+    case confusion_signal(issue, run_id) do
+      %{} = signal -> {:confusions, signal}
+      nil -> typed_tool_blocker(non_retryable_typed_tool_blocker(issue, run_id))
+    end
+  end
+
+  defp typed_tool_blocker(%{} = blocker), do: {:typed_tool, blocker}
+  defp typed_tool_blocker(_blocker), do: :none
+
+  defp confusion_signal(%Issue{id: issue_id}, run_id) when is_binary(issue_id) do
+    %{issue_id: issue_id, run_id: run_id}
+    |> EventStore.recent_issue_events(limit: 100)
+    |> Enum.find(fn event ->
+      event["event"] == DynamicToolEventContract.tool_call_succeeded() and
+        event["workflow_signal"] == "blocked_confusions" and
+        event["issue_id"] == issue_id and
+        event["run_id"] == run_id
+    end)
+  end
+
+  defp confusion_signal(_issue, _run_id), do: nil
 
   defp non_retryable_typed_tool_blocker(%Issue{id: issue_id}, run_id) when is_binary(issue_id) do
     %{issue_id: issue_id, run_id: run_id}

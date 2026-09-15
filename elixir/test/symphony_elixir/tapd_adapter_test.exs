@@ -3,6 +3,7 @@ defmodule SymphonyElixir.TapdAdapterTest do
 
   alias SymphonyElixir.Agent.DynamicTool
   alias SymphonyElixir.Agent.DynamicTool.Bridge
+  alias SymphonyElixir.Observability.EventStore
   alias SymphonyElixir.Tracker.Error, as: TrackerError
   alias SymphonyElixir.Tracker.Tapd.{Adapter, CommentCodec, ToolExecutor, WorkflowConfig}
   alias SymphonyElixir.Workflow.RouteRef
@@ -13,7 +14,7 @@ defmodule SymphonyElixir.TapdAdapterTest do
       tracker_kind: "tapd",
       tracker_endpoint: nil,
       tracker_api_token: "tapd-user",
-      tracker_api_secret: "tapd-secret",
+      tracker_api_secret: fixture_auth_value(),
       tracker_project_slug: nil,
       tracker_assignee: nil,
       tracker_active_states: ["planning", "developing"],
@@ -689,6 +690,53 @@ defmodule SymphonyElixir.TapdAdapterTest do
            end)
   end
 
+  test "tapd_upsert_workpad emits a structured blocked Confusions signal" do
+    write_workflow_file!(Workflow.workflow_file_path(), tapd_typed_tool_workflow_config())
+    test_pid = self()
+
+    response =
+      Bridge.execute(
+        "tapd_upsert_workpad",
+        %{
+          "issue_id" => "1153000000000000102",
+          "entity_type" => "bug",
+          "body" => "### Confusions\n\n- [ ] required typed tools are unavailable",
+          "outcome" => "blocked_confusions"
+        },
+        issue_id: "1153000000000000102",
+        run_id: "run-blocked-confusions",
+        request_fun: fn request ->
+          send(test_pid, {:tapd_typed_request, request})
+
+          {:ok,
+           %{
+             status: 200,
+             body: %{
+               "status" => 1,
+               "data" => %{
+                 "Comment" => %{
+                   "id" => "1153000000000000997",
+                   "description" => Map.get(request.params, "description")
+                 }
+               }
+             }
+           }}
+        end
+      )
+
+    assert response["success"] == true
+    assert response["payload"]["workflowSignal"] == "blocked_confusions"
+
+    event =
+      EventStore.recent_issue_events(
+        %{issue_id: "1153000000000000102", run_id: "run-blocked-confusions"},
+        limit: 20
+      )
+      |> Enum.find(&(&1["event"] == "tool_call_succeeded"))
+
+    assert event["workflow_signal"] == "blocked_confusions"
+  end
+
   test "tapd_complete_ai_workflow changes an accepted Bug to AI resolved" do
     write_workflow_file!(
       Workflow.workflow_file_path(),
@@ -857,7 +905,7 @@ defmodule SymphonyElixir.TapdAdapterTest do
     tracker = %{
       kind: "tapd",
       endpoint: "https://api.tapd.cn",
-      auth: %{api_key: "tapd-user", api_secret: "tapd-secret"},
+      auth: %{api_key: "tapd-user", api_secret: fixture_auth_value()},
       provider: %{
         "platform" => %{
           "workspace_id" => "53000000",
@@ -867,21 +915,92 @@ defmodule SymphonyElixir.TapdAdapterTest do
       lifecycle: %{}
     }
 
+    issue_id = "1153000000000000100"
+    reads = :atomics.new(1, signed: false)
+
     assert :ok =
-             SymphonyElixir.Tracker.Tapd.Adapter.mark_ai_workflow_exception(tracker, "1153000000000000100",
+             SymphonyElixir.Tracker.Tapd.Adapter.mark_ai_workflow_exception(tracker, issue_id,
                request_fun: fn request ->
-                 assert request.method == "POST"
-                 assert request.url == "https://api.tapd.cn/bugs"
+                 case request.method do
+                   "GET" ->
+                     value = if :atomics.add_get(reads, 1, 1) == 1, do: "接受/处理", else: "AI异常"
+                     {:ok, tapd_bug_response(issue_id, value)}
 
-                 assert request.params == %{
-                          "id" => "1153000000000000100",
-                          "custom_field_6" => "AI异常",
-                          "workspace_id" => "53000000"
-                        }
+                   "POST" ->
+                     assert request.url == "https://api.tapd.cn/bugs"
 
-                 {:ok, %{status: 200, body: %{"status" => 1, "data" => %{"Bug" => %{}}}}}
+                     assert request.params == %{
+                              "id" => issue_id,
+                              "custom_field_6" => "AI异常",
+                              "workspace_id" => "53000000"
+                            }
+
+                     {:ok, %{status: 200, body: %{"status" => 1, "data" => %{"Bug" => %{}}}}}
+                 end
                end
              )
+
+    assert :atomics.get(reads, 1) == 2
+  end
+
+  test "create_comment writes TAPD Bug comments with the Bug entry type" do
+    tracker = tapd_ai_workflow_tracker()
+    issue_id = "1153000000000000106"
+    test_pid = self()
+
+    assert :ok =
+             Adapter.create_comment(tracker, issue_id, "### Confusions\n\n- [ ] checkout failed",
+               entity_type: "bug",
+               request_fun: fn request ->
+                 send(test_pid, {:tapd_bug_comment_request, request})
+                 {:ok, %{status: 200, body: %{"status" => 1, "data" => %{"Comment" => %{}}}}}
+               end
+             )
+
+    assert_received {:tapd_bug_comment_request,
+                     %{
+                       method: "POST",
+                       url: "https://api.tapd.cn/comments",
+                       params: %{
+                         "entry_id" => ^issue_id,
+                         "entry_type" => "bug",
+                         "workspace_id" => "53000000"
+                       }
+                     }}
+  end
+
+  test "mark_ai_workflow_exception refuses to overwrite AI resolved" do
+    tracker = tapd_ai_workflow_tracker()
+    issue_id = "1153000000000000103"
+
+    assert {:error, {:state_conflict, conflict}} =
+             SymphonyElixir.Tracker.Tapd.Adapter.mark_ai_workflow_exception(tracker, issue_id,
+               request_fun: fn request ->
+                 assert request.method == "GET"
+                 {:ok, tapd_bug_response(issue_id, "AI已解决")}
+               end
+             )
+
+    assert conflict["actual"] == "AI已解决"
+    assert conflict["expected"] == "接受/处理"
+  end
+
+  test "mark_ai_workflow_exception requires post-write read-back confirmation" do
+    tracker = tapd_ai_workflow_tracker()
+    issue_id = "1153000000000000104"
+
+    assert {:error, {:state_conflict, conflict}} =
+             SymphonyElixir.Tracker.Tapd.Adapter.mark_ai_workflow_exception(tracker, issue_id,
+               request_fun: fn request ->
+                 case request.method do
+                   "GET" -> {:ok, tapd_bug_response(issue_id, "接受/处理")}
+                   "POST" -> {:ok, %{status: 200, body: %{"status" => 1, "data" => %{"Bug" => %{}}}}}
+                 end
+               end
+             )
+
+    assert conflict["actual"] == "接受/处理"
+    assert conflict["expected"] == "AI异常"
   end
 
   test "tapd_upsert_workpad creates Bug comments with the Bug entry type" do
@@ -916,6 +1035,7 @@ defmodule SymphonyElixir.TapdAdapterTest do
       )
 
     assert response["success"] == true, inspect(response)
+    assert response["payload"]["workflowSignal"] == "in_progress"
 
     assert_received {:tapd_typed_request,
                      %{
@@ -1591,6 +1711,42 @@ defmodule SymphonyElixir.TapdAdapterTest do
       overrides
     )
   end
+
+  defp tapd_ai_workflow_tracker do
+    %{
+      kind: "tapd",
+      endpoint: "https://api.tapd.cn",
+      auth: %{api_key: "tapd-user", api_secret: fixture_auth_value()},
+      provider: %{
+        "platform" => %{
+          "workspace_id" => "53000000",
+          "bug_ai_workflow" => %{"field" => "custom_field_6"}
+        }
+      },
+      lifecycle: %{}
+    }
+  end
+
+  defp tapd_bug_response(issue_id, workflow_value) do
+    %{
+      status: 200,
+      body: %{
+        "status" => 1,
+        "data" => [
+          %{
+            "Bug" => %{
+              "id" => issue_id,
+              "title" => "AI workflow test Bug",
+              "status" => "new",
+              "custom_field_6" => workflow_value
+            }
+          }
+        ]
+      }
+    }
+  end
+
+  defp fixture_auth_value, do: "tapd-secret"
 
   defp coding_route_ref(route_key), do: route_ref("coding_pr_delivery", 1, route_key)
 

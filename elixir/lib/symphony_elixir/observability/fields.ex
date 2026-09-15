@@ -15,6 +15,7 @@ defmodule SymphonyElixir.Observability.Fields do
     turn_id
     turn_number
     max_turns
+    max_retry_attempts
     agent_model
     model_reasoning_effort
     attempt
@@ -37,6 +38,7 @@ defmodule SymphonyElixir.Observability.Fields do
     turn_id
     turn_number
     max_turns
+    max_retry_attempts
     agent_model
     model_reasoning_effort
     tracker_kind
@@ -68,6 +70,7 @@ defmodule SymphonyElixir.Observability.Fields do
     workflow_gate
     workflow_gate_reason
     workflow_missing_capabilities
+    workflow_signal
     tool_name
     provider_tool_name
     canonical_tool_name
@@ -125,6 +128,7 @@ defmodule SymphonyElixir.Observability.Fields do
     turn_id
     turn_number
     max_turns
+    max_retry_attempts
     agent_model
     model_reasoning_effort
     attempt
@@ -156,6 +160,7 @@ defmodule SymphonyElixir.Observability.Fields do
     workflow_gate
     workflow_gate_reason
     workflow_missing_capabilities
+    workflow_signal
     tool_name
     provider_tool_name
     canonical_tool_name

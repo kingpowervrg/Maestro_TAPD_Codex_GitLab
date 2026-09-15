@@ -30,7 +30,7 @@ defmodule SymphonyElixir.Tracker.Tapd.Client.Writer do
       %{
         "entry_id" => story_id,
         "description" => description,
-        "entry_type" => "stories"
+        "entry_type" => comment_entry_type(Keyword.get(opts, :entity_type))
       }
       |> maybe_put_comment_author(Map.get(platform, "comment_author"))
 
@@ -43,6 +43,9 @@ defmodule SymphonyElixir.Tracker.Tapd.Client.Writer do
     emit_tracker_write_result(result, started_at_ms, :tracker_comment_create_succeeded, :tracker_comment_create_failed, fields)
     result
   end
+
+  defp comment_entry_type("bug"), do: "bug"
+  defp comment_entry_type(_entity_type), do: "stories"
 
   @spec update_story_status(String.t(), String.t(), keyword()) :: :ok | {:error, term()}
   def update_story_status(story_id, status, opts \\ [])

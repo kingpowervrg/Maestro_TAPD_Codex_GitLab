@@ -49,6 +49,7 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
   @complete_ai_workflow_capability TrackerCapabilities.complete_ai_workflow()
 
   @default_comment_limit 50
+  @workpad_outcomes ["in_progress", "blocked_confusions"]
   @spec tool_specs() :: [map()]
   def tool_specs do
     [
@@ -89,7 +90,7 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
       tool_spec(
         @upsert_workpad_tool,
         @upsert_workpad_capability,
-        "Create or update the single TAPD workpad. The stable identity is workpad_id from tapd_issue_snapshot or the internal workpad registry; tracker comment text is never parsed to discover workpads. Markdown is encoded by the TAPD client.",
+        "Create or update the single TAPD workpad. The stable identity is workpad_id from tapd_issue_snapshot or the internal workpad registry; tracker comment text is never parsed to discover workpads. Set outcome to blocked_confusions when unresolved Confusions must stop the AI workflow. Markdown is encoded by the TAPD client.",
         "write",
         %{
           "type" => "object",
@@ -100,7 +101,12 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
             "entity_type" => %{"type" => ["string", "null"], "enum" => ["story", "bug", nil], "description" => "TAPD entity type. Use bug for a Bug workpad; defaults to story."},
             "body" => %{"type" => "string", "description" => "Workpad body to write. The executor does not inspect headings, sections, or checkbox text."},
             "workpad_id" => %{"type" => ["string", "null"], "description" => "Existing workpad id to update. This is the stable tracker-level workpad identity."},
-            "mode" => %{"type" => ["string", "null"], "description" => "Upsert mode. The current contract supports replace."}
+            "mode" => %{"type" => ["string", "null"], "description" => "Upsert mode. The current contract supports replace."},
+            "outcome" => %{
+              "type" => "string",
+              "enum" => @workpad_outcomes,
+              "description" => "Machine-readable turn outcome. Use blocked_confusions only when the Workpad records unresolved Confusions; defaults to in_progress."
+            }
           }
         }
       ),
@@ -325,7 +331,11 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
     with {:ok, args} <- upsert_workpad_args(arguments),
          :ok <- validate_workpad_mode(args.mode),
          {:ok, comment} <- upsert_workpad_comment(tracker, args, opts) do
-      {:success, success_payload(%{"comment" => comment})}
+      {:success,
+       success_payload(%{
+         "comment" => comment,
+         "workflowSignal" => args.outcome
+       })}
     else
       {:error, reason} -> typed_failure(reason)
     end
@@ -825,19 +835,29 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
     with {:ok, issue_id} <- required_string(arguments, "issue_id"),
          {:ok, body} <- required_string(arguments, "body"),
          {:ok, workpad_id} <- optional_nullable_string(arguments, "workpad_id"),
-         {:ok, entity_type} <- optional_entity_type(arguments) do
+         {:ok, entity_type} <- optional_entity_type(arguments),
+         {:ok, outcome} <- optional_workpad_outcome(arguments) do
       {:ok,
        %{
          issue_id: issue_id,
          body: body,
          entity_type: entity_type,
          workpad_id: workpad_id,
-         mode: nullable_string(arguments, "mode") || "replace"
+         mode: nullable_string(arguments, "mode") || "replace",
+         outcome: outcome
        }}
     end
   end
 
   defp upsert_workpad_args(_arguments), do: {:error, {:invalid_arguments, "Expected an object with issue_id and body."}}
+
+  defp optional_workpad_outcome(arguments) do
+    case nullable_string(arguments, "outcome") do
+      nil -> {:ok, "in_progress"}
+      outcome when outcome in @workpad_outcomes -> {:ok, outcome}
+      _outcome -> {:error, {:invalid_arguments, "Workpad outcome must be in_progress or blocked_confusions."}}
+    end
+  end
 
   defp complete_ai_workflow_args(arguments) when is_map(arguments) do
     with {:ok, issue_id} <- required_string(arguments, "issue_id"),

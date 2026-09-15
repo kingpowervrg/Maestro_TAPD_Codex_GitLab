@@ -7,6 +7,7 @@ defmodule SymphonyElixir.Workflow.DynamicToolPlan do
   alias SymphonyElixir.Agent.DynamicTool.Context.ToolPlan
   alias SymphonyElixir.Capability.Registry, as: CapabilityRegistry
   alias SymphonyElixir.Config
+  alias SymphonyElixir.Config.TapdGitCodexCapabilities
   alias SymphonyElixir.Workflow.Capabilities
 
   @default_exposure :workflow_required
@@ -42,6 +43,8 @@ defmodule SymphonyElixir.Workflow.DynamicToolPlan do
     with {:ok, settings} <- workflow_settings(opts),
          {:ok, required_capabilities, _profile_context} <-
            required_capabilities(settings, Keyword.get(opts, :issue)),
+         required_capabilities <-
+           Enum.uniq(required_capabilities ++ TapdGitCodexCapabilities.required_capabilities(settings)),
          dynamic_tool_capabilities <- Enum.filter(required_capabilities, &typed_workflow_capability?/1),
          {:ok, resolved_tools} <-
            Inventory.resolve_required(tool_context, dynamic_tool_capabilities) do

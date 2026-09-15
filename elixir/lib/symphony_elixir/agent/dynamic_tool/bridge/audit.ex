@@ -48,6 +48,7 @@ defmodule SymphonyElixir.Agent.DynamicTool.Bridge.Audit do
       result_summary: Redaction.summarize(result)
     }
     |> Map.merge(diagnostics_fields(result, opts))
+    |> maybe_put_workflow_signal(result)
   end
 
   @spec rejection_fields(term(), integer(), keyword()) :: map()
@@ -87,4 +88,14 @@ defmodule SymphonyElixir.Agent.DynamicTool.Bridge.Audit do
   defp elapsed_ms(started_at_ms) when is_integer(started_at_ms) do
     max(System.monotonic_time(:millisecond) - started_at_ms, 0)
   end
+
+  defp maybe_put_workflow_signal(fields, %{
+         "success" => true,
+         "payload" => %{"workflowSignal" => signal}
+       })
+       when is_binary(signal) do
+    Map.put(fields, :workflow_signal, signal)
+  end
+
+  defp maybe_put_workflow_signal(fields, _result), do: fields
 end

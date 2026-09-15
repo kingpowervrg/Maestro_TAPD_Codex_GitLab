@@ -55,6 +55,25 @@ defmodule SymphonyElixir.Config.InputNormalizer do
     end
   end
 
+  @spec resolve_integer_setting(term(), integer()) :: term()
+  def resolve_integer_setting(nil, default) when is_integer(default), do: default
+
+  def resolve_integer_setting(value, default) when is_binary(value) and is_integer(default) do
+    case env_reference_name(value) do
+      {:ok, env_name} ->
+        case System.get_env(env_name) do
+          nil -> default
+          "" -> default
+          env_value -> env_value
+        end
+
+      :error ->
+        value
+    end
+  end
+
+  def resolve_integer_setting(value, _default), do: value
+
   @spec resolve_path_value(String.t() | nil, String.t()) :: String.t()
   def resolve_path_value(value, default) when is_binary(value) do
     case normalize_path_token(value) do

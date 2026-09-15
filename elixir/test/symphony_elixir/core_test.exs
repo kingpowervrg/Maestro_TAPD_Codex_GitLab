@@ -84,6 +84,7 @@ defmodule SymphonyElixir.CoreTest do
     assert TrackerConfig.state_phase_map(config.tracker)["done"] == "done"
     assert TrackerConfig.provider(config.tracker)["assignee"] == nil
     assert config.agent.execution.max_turns == 20
+    assert config.agent.execution.max_retry_attempts == 3
 
     assert config.repo.path == "repo"
     assert config.repo.remote.name == "origin"
@@ -140,6 +141,42 @@ defmodule SymphonyElixir.CoreTest do
 
     write_workflow_file!(Workflow.workflow_file_path(), max_turns: 5)
     assert Config.settings!().agent.execution.max_turns == 5
+
+    previous_max_retry_attempts = System.get_env("SYMPHONY_MAX_RETRY_ATTEMPTS")
+
+    try do
+      System.put_env("SYMPHONY_MAX_RETRY_ATTEMPTS", "4")
+
+      write_workflow_file!(Workflow.workflow_file_path(),
+        max_retry_attempts: "$SYMPHONY_MAX_RETRY_ATTEMPTS"
+      )
+
+      assert Config.settings!().agent.execution.max_retry_attempts == 4
+
+      System.put_env("SYMPHONY_MAX_RETRY_ATTEMPTS", "0")
+      assert {:error, {:invalid_workflow_config, message}} = Config.validate!()
+      assert message =~ "agent.execution.max_retry_attempts"
+    after
+      restore_env("SYMPHONY_MAX_RETRY_ATTEMPTS", previous_max_retry_attempts)
+    end
+
+    previous_hook_timeout_ms = System.get_env("SYMPHONY_WORKSPACE_HOOK_TIMEOUT_MS")
+
+    try do
+      System.put_env("SYMPHONY_WORKSPACE_HOOK_TIMEOUT_MS", "300000")
+
+      write_workflow_file!(Workflow.workflow_file_path(),
+        hook_timeout_ms: "$SYMPHONY_WORKSPACE_HOOK_TIMEOUT_MS"
+      )
+
+      assert Config.settings!().hooks.timeout_ms == 300_000
+
+      System.put_env("SYMPHONY_WORKSPACE_HOOK_TIMEOUT_MS", "0")
+      assert {:error, {:invalid_workflow_config, message}} = Config.validate!()
+      assert message =~ "hooks.timeout_ms"
+    after
+      restore_env("SYMPHONY_WORKSPACE_HOOK_TIMEOUT_MS", previous_hook_timeout_ms)
+    end
 
     write_workflow_file!(Workflow.workflow_file_path(), tracker_active_states: "Todo,  Review,")
     assert {:error, {:invalid_workflow_config, message}} = Config.validate!()
@@ -283,6 +320,7 @@ defmodule SymphonyElixir.CoreTest do
         execution:
           max_concurrent_agents: 10
           max_turns: 20
+          max_retry_attempts: 3
           max_retry_backoff_ms: 300000
           max_concurrent_agents_by_state: {}
       agent_provider:

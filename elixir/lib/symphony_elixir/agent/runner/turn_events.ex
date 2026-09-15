@@ -23,6 +23,7 @@ defmodule SymphonyElixir.Agent.Runner.TurnEvents do
   def terminal_event_for_error({:turn_input_required, _payload}), do: :agent_turn_input_required
   def terminal_event_for_error({:approval_required, _payload}), do: :agent_turn_input_required
   def terminal_event_for_error({:turn_blocked, _payload}), do: :agent_turn_blocked
+  def terminal_event_for_error({:confusions, _payload}), do: :agent_turn_blocked
 
   def terminal_event_for_error(%ProviderError{code: code}) do
     code
@@ -83,6 +84,15 @@ defmodule SymphonyElixir.Agent.Runner.TurnEvents do
     }
   end
 
+  def error_fields({:confusions, _signal}) do
+    %{
+      failure_class: TurnStatus.blocked(),
+      error_code: :confusions,
+      retryable: false,
+      error: "Agent reported unresolved Confusions in the canonical TAPD workpad."
+    }
+  end
+
   def error_fields(reason) do
     reason
     |> ObsLogger.error_details()
@@ -115,6 +125,7 @@ defmodule SymphonyElixir.Agent.Runner.TurnEvents do
   def failure_class({:turn_input_required, _payload}), do: TurnStatus.input_required()
   def failure_class({:approval_required, _payload}), do: TurnStatus.input_required()
   def failure_class({:turn_blocked, _payload}), do: TurnStatus.blocked()
+  def failure_class({:confusions, _payload}), do: TurnStatus.blocked()
   def failure_class({:turn_cancelled, _payload}), do: TurnStatus.cancelled()
   def failure_class(_reason), do: "agent_provider_failure"
 
@@ -154,6 +165,7 @@ defmodule SymphonyElixir.Agent.Runner.TurnEvents do
   defp error_code({:turn_input_required, _payload}), do: :turn_input_required
   defp error_code({:approval_required, _payload}), do: :approval_required
   defp error_code({:turn_blocked, _payload}), do: :typed_tool_non_retryable_blocker
+  defp error_code({:confusions, _payload}), do: :confusions
   defp error_code({:turn_cancelled, _payload}), do: :turn_cancelled
   defp error_code(_reason), do: :agent_turn_failed
 

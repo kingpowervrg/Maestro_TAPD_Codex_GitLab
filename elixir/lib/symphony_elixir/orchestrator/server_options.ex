@@ -42,6 +42,9 @@ defmodule SymphonyElixir.Orchestrator.ServerOptions do
       dispatch_runtime: Runtime.dispatch_runtime(state, metadata[:worker_host]),
       dispatch_issue: &IssueDispatch.dispatch_issue/4,
       release_issue_claim: &release_issue_claim/2,
+      finalize_retry_exhaustion: &finalize_retry_exhaustion/2,
+      create_comment: &Tracker.create_comment/3,
+      mark_ai_workflow_exception: &Tracker.mark_ai_workflow_exception/1,
       cleanup_issue_workspace: &cleanup_issue_workspace/3,
       emit_event: &Events.emit/5
     ]
@@ -108,6 +111,16 @@ defmodule SymphonyElixir.Orchestrator.ServerOptions do
   @spec release_issue_claim(State.t(), String.t()) :: State.t()
   def release_issue_claim(%State{} = state, issue_id) do
     %{state | claimed: MapSet.delete(state.claimed, issue_id)}
+  end
+
+  @spec finalize_retry_exhaustion(State.t(), String.t()) :: State.t()
+  def finalize_retry_exhaustion(%State{} = state, issue_id) do
+    %{
+      state
+      | claimed: MapSet.delete(state.claimed, issue_id),
+        completed: MapSet.put(state.completed, issue_id),
+        retry_attempts: Map.delete(state.retry_attempts, issue_id)
+    }
   end
 
   @spec cleanup_issue_workspace(String.t()) :: :ok | {:error, term()}

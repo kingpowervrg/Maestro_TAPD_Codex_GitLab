@@ -173,7 +173,20 @@ shell environments. Only Maestro's `repo_remote_search` request uses it; the
 agent must never make direct token-bearing GitLab calls. The ignored
 `.env.gitlab.local` may contain `SYMPHONY_TAPD_GITLAB_ENV_FILE` to point the
 launcher at the external file; credentials should remain in that external
-file.
+file. Set `SYMPHONY_MAX_RETRY_ATTEMPTS` in the same file to cap failed agent
+reruns (default `3`). Waiting only because all execution slots are occupied
+does not increment this counter or start a model session. When a TAPD Bug
+exhausts the configured retry limit, Maestro marks `AI特殊工作流` as `AI异常`
+and suppresses further dispatch. Set `SYMPHONY_WORKSPACE_HOOK_TIMEOUT_MS`
+(recommended `300000`) when refreshing a large shallow Git repository can take
+longer than the global 60-second hook default. The TAPD/Git `before_run` hook
+compares the remote base-branch SHA first and skips `git fetch` when the local
+remote-tracking ref is already current.
+
+Exception writes are state guarded: Maestro re-reads the Bug immediately before
+the update, writes `AI异常` only while the field is still `接受/处理` and the Bug
+is still in an AI-active state, then reads it back for confirmation. It will not
+overwrite `AI已解决` or another human-owned value.
 
 Use least-privilege credentials when possible. Avoid using high-privilege personal tokens for long-running unattended operation.
 

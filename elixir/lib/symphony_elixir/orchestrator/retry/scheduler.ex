@@ -73,6 +73,13 @@ defmodule SymphonyElixir.Orchestrator.Retry.Scheduler do
 
   def next_attempt_from_running(_running_entry), do: nil
 
+  @spec exhausted?(integer()) :: boolean()
+  def exhausted?(attempt) when is_integer(attempt) and attempt > 0 do
+    attempt > Config.settings!().agent.execution.max_retry_attempts
+  end
+
+  def exhausted?(_attempt), do: false
+
   defp retry_delay(attempt, metadata)
        when is_integer(attempt) and attempt > 0 and is_map(metadata) do
     if metadata[:delay_type] == :continuation and attempt == 1 do

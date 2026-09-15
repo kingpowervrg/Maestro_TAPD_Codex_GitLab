@@ -1542,6 +1542,241 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
     refute Map.has_key?(final_state.running, issue_id)
   end
 
+  test "retry exhaustion stops dispatch and marks a TAPD Bug AI workflow as exceptional" do
+    write_workflow_file!(Workflow.workflow_file_path(), max_retry_attempts: 2)
+
+    issue_id = "1153000000000000101"
+    parent = self()
+
+    issue = %Issue{
+      id: issue_id,
+      identifier: "TAPD-#{issue_id}",
+      entity_type: "bug",
+      title: "Retry limit",
+      state: "In Progress",
+      assigned_to_worker: true
+    }
+
+    state =
+      SymphonyElixir.Orchestrator.State.initial()
+      |> Map.put(:claimed, MapSet.new([issue_id]))
+
+    dispatch_context =
+      SymphonyElixir.Orchestrator.Dispatch.new_context(["In Progress"], ["Done"], max_concurrent_agents_for_state: fn _state -> 1 end)
+
+    opts = [
+      dispatch_context: dispatch_context,
+      dispatch_runtime: %{running: %{}, claimed: [issue_id], orchestrator_slots: 1, worker_slots_available?: true},
+      dispatch_issue: fn _state, _issue, _attempt, _worker_host ->
+        flunk("an exhausted retry must not dispatch")
+      end,
+      release_issue_claim: fn retry_state, retry_issue_id ->
+        %{retry_state | claimed: MapSet.delete(retry_state.claimed, retry_issue_id)}
+      end,
+      finalize_retry_exhaustion: fn retry_state, retry_issue_id ->
+        send(parent, :retry_exhaustion_finalized)
+
+        %{
+          retry_state
+          | claimed: MapSet.delete(retry_state.claimed, retry_issue_id),
+            completed: MapSet.put(retry_state.completed, retry_issue_id)
+        }
+      end,
+      create_comment: fn ^issue_id, body, entity_type: "bug" ->
+        send(parent, {:retry_confusion_recorded, body})
+        :ok
+      end,
+      mark_ai_workflow_exception: fn ^issue_id ->
+        send(parent, :ai_exception_marked)
+        :ok
+      end,
+      cleanup_issue_workspace: fn _identifier, _worker_host, _workspace_path -> :ok end,
+      fetch_candidate_issues: fn -> {:ok, [issue]} end,
+      emit_event: fn level, event, _issue, _state, fields ->
+        send(parent, {:retry_event, level, event, fields})
+        :ok
+      end
+    ]
+
+    assert {:noreply, final_state} =
+             SymphonyElixir.Orchestrator.Retry.IssueHandler.handle(
+               state,
+               issue_id,
+               3,
+               %{identifier: issue.identifier, run_id: "run-retry-exhausted"},
+               opts
+             )
+
+    assert_receive {:retry_confusion_recorded, body}
+    assert body =~ "### Confusions"
+    assert body =~ "retry limit was exhausted"
+    assert body =~ "configured retry limit: `2`"
+    assert body =~ "Run ID: `run-retry-exhausted`"
+    assert body =~ "Session ID: `n/a`"
+    assert_received :ai_exception_marked
+    assert_received :retry_exhaustion_finalized
+    assert_received {:retry_event, :error, :issue_retry_exhausted, %{max_retry_attempts: 2}}
+    assert_received {:retry_event, :warning, :tracker_issue_confusion_recorded, %{reason: "retry_exhausted"}}
+    assert MapSet.member?(final_state.completed, issue_id)
+    refute MapSet.member?(final_state.claimed, issue_id)
+  end
+
+  test "retry exhaustion still marks a TAPD Bug exceptional when recording Confusions fails" do
+    write_workflow_file!(Workflow.workflow_file_path(), max_retry_attempts: 2)
+
+    issue_id = "1153000000000000105"
+    parent = self()
+
+    issue = %Issue{
+      id: issue_id,
+      identifier: "TAPD-#{issue_id}",
+      entity_type: "bug",
+      title: "Retry comment failure",
+      state: "In Progress",
+      assigned_to_worker: true
+    }
+
+    state =
+      SymphonyElixir.Orchestrator.State.initial()
+      |> Map.put(:claimed, MapSet.new([issue_id]))
+
+    dispatch_context =
+      SymphonyElixir.Orchestrator.Dispatch.new_context(["In Progress"], ["Done"], max_concurrent_agents_for_state: fn _state -> 1 end)
+
+    opts = [
+      dispatch_context: dispatch_context,
+      dispatch_runtime: %{running: %{}, claimed: [issue_id], orchestrator_slots: 1, worker_slots_available?: true},
+      dispatch_issue: fn _state, _issue, _attempt, _worker_host -> flunk("an exhausted retry must not dispatch") end,
+      release_issue_claim: fn retry_state, retry_issue_id ->
+        %{retry_state | claimed: MapSet.delete(retry_state.claimed, retry_issue_id)}
+      end,
+      create_comment: fn ^issue_id, _body, entity_type: "bug" -> {:error, :tapd_unavailable} end,
+      mark_ai_workflow_exception: fn ^issue_id ->
+        send(parent, :ai_exception_marked_after_comment_failure)
+        :ok
+      end,
+      cleanup_issue_workspace: fn _identifier, _worker_host, _workspace_path -> :ok end,
+      fetch_candidate_issues: fn -> {:ok, [issue]} end,
+      emit_event: fn level, event, _issue, _state, fields ->
+        send(parent, {:retry_event, level, event, fields})
+        :ok
+      end
+    ]
+
+    assert {:noreply, final_state} =
+             SymphonyElixir.Orchestrator.Retry.IssueHandler.handle(
+               state,
+               issue_id,
+               3,
+               %{identifier: issue.identifier, run_id: "run-comment-failure", error: "checkout failed"},
+               opts
+             )
+
+    assert_received :ai_exception_marked_after_comment_failure
+
+    assert_received {:retry_event, :error, :tracker_issue_confusion_record_failed, %{reason: "retry_exhausted", error: ":tapd_unavailable"}}
+
+    refute MapSet.member?(final_state.claimed, issue_id)
+  end
+
+  test "retry exhaustion releases a TAPD Bug that is no longer dispatchable without overwriting its AI workflow" do
+    write_workflow_file!(Workflow.workflow_file_path(), max_retry_attempts: 2)
+
+    issue_id = "1153000000000000102"
+    parent = self()
+
+    issue = %Issue{
+      id: issue_id,
+      identifier: "TAPD-#{issue_id}",
+      entity_type: "bug",
+      title: "Already resolved",
+      state: "In Progress",
+      assigned_to_worker: false,
+      custom_fields: %{"AI特殊工作流" => "AI已解决"}
+    }
+
+    state =
+      SymphonyElixir.Orchestrator.State.initial()
+      |> Map.put(:claimed, MapSet.new([issue_id]))
+
+    dispatch_context =
+      SymphonyElixir.Orchestrator.Dispatch.new_context(["In Progress"], ["Done"], max_concurrent_agents_for_state: fn _state -> 1 end)
+
+    opts = [
+      dispatch_context: dispatch_context,
+      dispatch_runtime: %{running: %{}, claimed: [issue_id], orchestrator_slots: 1, worker_slots_available?: true},
+      dispatch_issue: fn _state, _issue, _attempt, _worker_host ->
+        flunk("a non-dispatchable retry must not dispatch")
+      end,
+      release_issue_claim: fn retry_state, retry_issue_id ->
+        send(parent, :retry_claim_released)
+        %{retry_state | claimed: MapSet.delete(retry_state.claimed, retry_issue_id)}
+      end,
+      finalize_retry_exhaustion: fn _retry_state, _retry_issue_id ->
+        flunk("a non-dispatchable retry must not be finalized as exhausted")
+      end,
+      mark_ai_workflow_exception: fn _retry_issue_id ->
+        flunk("AI已解决 must not be overwritten with AI异常")
+      end,
+      cleanup_issue_workspace: fn _identifier, _worker_host, _workspace_path -> :ok end,
+      fetch_candidate_issues: fn -> {:ok, [issue]} end
+    ]
+
+    assert {:noreply, final_state} =
+             SymphonyElixir.Orchestrator.Retry.IssueHandler.handle(
+               state,
+               issue_id,
+               3,
+               %{identifier: issue.identifier, run_id: "run-already-resolved"},
+               opts
+             )
+
+    assert_received :retry_claim_released
+    refute MapSet.member?(final_state.claimed, issue_id)
+  end
+
+  test "capacity deferral does not consume another retry attempt" do
+    write_workflow_file!(Workflow.workflow_file_path(), max_retry_attempts: 2)
+
+    issue = %Issue{
+      id: "issue-capacity-wait",
+      identifier: "MT-CAPACITY-WAIT",
+      title: "Wait for capacity",
+      state: "In Progress",
+      assigned_to_worker: true
+    }
+
+    state =
+      SymphonyElixir.Orchestrator.State.initial()
+      |> Map.put(:claimed, MapSet.new([issue.id]))
+
+    dispatch_context =
+      SymphonyElixir.Orchestrator.Dispatch.new_context(["In Progress"], ["Done"], max_concurrent_agents_for_state: fn _state -> 1 end)
+
+    opts = [
+      dispatch_context: dispatch_context,
+      dispatch_runtime: %{running: %{}, claimed: [issue.id], orchestrator_slots: 0, worker_slots_available?: false},
+      dispatch_issue: fn _state, _issue, _attempt, _worker_host ->
+        flunk("a capacity-blocked retry must not dispatch")
+      end,
+      release_issue_claim: fn retry_state, _retry_issue_id -> retry_state end,
+      cleanup_issue_workspace: fn _identifier, _worker_host, _workspace_path -> :ok end,
+      fetch_candidate_issues: fn -> {:ok, [issue]} end
+    ]
+
+    assert {:noreply, final_state} =
+             SymphonyElixir.Orchestrator.Retry.IssueHandler.handle(
+               state,
+               issue.id,
+               2,
+               %{identifier: issue.identifier, run_id: "run-capacity-wait"},
+               opts
+             )
+
+    assert %{attempt: 2, timer_ref: timer_ref} = final_state.retry_attempts[issue.id]
+    Process.cancel_timer(timer_ref)
+  end
+
   test "normal worker exit refreshes stale running issue before scheduling continuation" do
     issue_id = "issue-stale-terminal-normal-exit"
     ref = make_ref()

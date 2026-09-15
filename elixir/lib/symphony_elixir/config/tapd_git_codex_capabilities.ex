@@ -16,14 +16,20 @@ defmodule SymphonyElixir.Config.TapdGitCodexCapabilities do
 
   @spec validate_required(map()) :: :ok | {:error, term()}
   def validate_required(settings) when is_map(settings) do
-    if tapd_git_codex_workflow?(settings) do
-      validate_inventory(@required_capabilities)
-    else
-      :ok
+    case required_capabilities(settings) do
+      [] -> :ok
+      required_capabilities -> validate_inventory(required_capabilities)
     end
   end
 
   def validate_required(_settings), do: :ok
+
+  @spec required_capabilities(map()) :: [String.t()]
+  def required_capabilities(settings) when is_map(settings) do
+    if tapd_git_codex_workflow?(settings), do: @required_capabilities, else: []
+  end
+
+  def required_capabilities(_settings), do: []
 
   defp validate_inventory(required_capabilities) do
     tool_context = DynamicTool.capture_context()

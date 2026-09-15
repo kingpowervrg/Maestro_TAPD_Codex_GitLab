@@ -816,6 +816,20 @@ defmodule SymphonyElixir.WorkflowTemplatesTest do
            }
 
     assert settings.repo.provider.kind == RepoProviderKinds.git()
+
+    assert get_in(config, ["agent", "execution", "max_retry_attempts"]) ==
+             "$SYMPHONY_MAX_RETRY_ATTEMPTS"
+
+    assert settings.agent.execution.max_retry_attempts == 3
+    assert get_in(config, ["hooks", "timeout_ms"]) == "$SYMPHONY_WORKSPACE_HOOK_TIMEOUT_MS"
+    assert settings.hooks.timeout_ms == 60_000
+
+    before_run = get_in(config, ["hooks", "before_run"])
+    assert before_run =~ "git -C repo ls-remote --exit-code"
+    assert before_run =~ ~s(if [ "$local_base_sha" != "$remote_base_sha" ])
+    assert before_run =~ "--filter=blob:none"
+    assert before_run =~ ~s(origin "+$task_base_branch:refs/remotes/origin/$task_base_branch")
+
     assert settings.repo.provider.options["remote_code_search"] == "gitlab"
     assert get_in(config, ["repo", "provider", "options", "gitlab_api_base_url"]) == "$GITLAB_API_BASE_URL"
     assert get_in(config, ["repo", "provider", "options", "gitlab_project_id"]) == "$GITLAB_PROJECT_ID"
@@ -859,6 +873,7 @@ defmodule SymphonyElixir.WorkflowTemplatesTest do
     assert :ok == SymphonyElixir.RepoProvider.validate_config(settings.repo)
     assert prompt =~ "tracker.complete_ai_workflow"
     assert prompt =~ "AI特殊工作流"
+    assert prompt =~ "outcome: blocked_confusions"
 
     after_create = get_in(config, ["hooks", "after_create"])
     assert after_create =~ "GIT_LFS_SKIP_SMUDGE=1"

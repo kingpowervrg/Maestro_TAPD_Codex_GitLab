@@ -144,6 +144,21 @@ defmodule SymphonyElixir.Workflow.DynamicToolPlanTest do
     refute "repo_merge_change_proposal" in names
   end
 
+  test "TAPD Git Codex sessions expose their template-required inventory tools" do
+    assert {:ok, context} =
+             WorkflowPlan.from_opts(
+               workflow_settings: tapd_git_codex_workflow_settings(),
+               issue: %{state: "new", lifecycle_phase: "todo", entity_type: "bug"},
+               tool_context: tapd_tool_context()
+             )
+
+    names = tool_names(context)
+
+    assert "repo_remote_search" in names
+    assert "repo_sparse_add" in names
+    assert "tapd_complete_ai_workflow" in names
+  end
+
   test "diagnostics exposure includes only fixed provider diagnostics" do
     assert {:ok, context} =
              WorkflowPlan.from_opts(
@@ -322,6 +337,34 @@ defmodule SymphonyElixir.Workflow.DynamicToolPlanTest do
     }
   end
 
+  defp tapd_git_codex_workflow_settings do
+    %{
+      workflow: %{
+        profile: %{
+          kind: "coding_pr_delivery",
+          version: 1,
+          options: %{
+            requirements: %{
+              change_proposal: false,
+              typed_tracker_tools: true,
+              typed_repo_tools: false
+            }
+          }
+        }
+      },
+      tracker: %{
+        kind: "tapd",
+        lifecycle: %{state_phase_map: %{"new" => "todo"}}
+      },
+      repo: %{
+        provider: %{
+          kind: "git",
+          options: %{remote_code_search: "gitlab"}
+        }
+      }
+    }
+  end
+
   defp full_tool_context do
     tool_specs = [
       tool_spec("legacy_tracker_api"),
@@ -401,6 +444,7 @@ defmodule SymphonyElixir.Workflow.DynamicToolPlanTest do
       tool_spec("tapd_upsert_workpad"),
       tool_spec("tapd_attach_external_reference"),
       tool_spec("tapd_provider_diagnostics"),
+      tool_spec("tapd_complete_ai_workflow"),
       tool_spec("tapd_create_follow_up_story"),
       tool_spec("tapd_read_story_relations"),
       tool_spec("tapd_add_story_relation"),
@@ -410,6 +454,8 @@ defmodule SymphonyElixir.Workflow.DynamicToolPlanTest do
       tool_spec("repo_diff"),
       tool_spec("repo_commit"),
       tool_spec("repo_push"),
+      tool_spec("repo_sparse_add"),
+      tool_spec("repo_remote_search"),
       tool_spec("repo_change_proposal_snapshot"),
       tool_spec("repo_create_or_update_change_proposal"),
       tool_spec("repo_read_change_proposal_discussion"),
@@ -426,6 +472,7 @@ defmodule SymphonyElixir.Workflow.DynamicToolPlanTest do
       "tapd_upsert_workpad" => typed_metadata("tracker.upsert_workpad", "write", "tapd"),
       "tapd_attach_external_reference" => typed_metadata("tracker.attach_external_reference", "write", "tapd"),
       "tapd_provider_diagnostics" => typed_metadata("tracker.provider_diagnostics", "read_only", "tapd"),
+      "tapd_complete_ai_workflow" => typed_metadata("tracker.complete_ai_workflow", "write", "tapd"),
       "tapd_create_follow_up_story" => typed_metadata("tracker.create_follow_up_issue", "write", "tapd"),
       "tapd_read_story_relations" => typed_metadata("tracker.read_issue_relations", "read_only", "tapd"),
       "tapd_add_story_relation" => typed_metadata("tracker.add_issue_relation", "write", "tapd"),
@@ -435,6 +482,8 @@ defmodule SymphonyElixir.Workflow.DynamicToolPlanTest do
       "repo_diff" => typed_metadata("repo.diff", "read_only", "git"),
       "repo_commit" => typed_metadata("repo.commit", "write", "git"),
       "repo_push" => typed_metadata("repo.push", "write", "git"),
+      "repo_sparse_add" => typed_metadata("repo.sparse_add", "write", "git"),
+      "repo_remote_search" => typed_metadata("repo.remote_search", "read_only", "gitlab"),
       "repo_change_proposal_snapshot" => typed_metadata("repo.change_proposal_snapshot", "read_only", "github"),
       "repo_create_or_update_change_proposal" => typed_metadata("repo.create_or_update_change_proposal", "write", "github"),
       "repo_read_change_proposal_discussion" => typed_metadata("repo.read_change_proposal_discussion", "read_only", "github"),

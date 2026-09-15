@@ -59,6 +59,15 @@ defmodule SymphonyElixir.AgentRunnerTest do
         })
       end
 
+      if Map.get(config.options, "emit_confusion_signal") == true do
+        SymphonyElixir.Observability.Logger.emit(:warning, DynamicToolEventContract.tool_call_succeeded_event(), %{
+          component: DynamicToolEventContract.dynamic_tool_bridge_component(),
+          issue_id: issue.id,
+          run_id: session.run_id,
+          workflow_signal: "blocked_confusions"
+        })
+      end
+
       {:ok, TurnResult.new(session_id: "fake-session", thread_id: "fake-thread", turn_id: "fake-turn")}
     end
 
@@ -417,6 +426,64 @@ defmodule SymphonyElixir.AgentRunnerTest do
     run_failed = List.last(agent_events)
     assert run_failed["status"] == "failed"
     assert run_failed["failure_class"] == "blocked"
+  end
+
+  test "runner stops after a workpad reports unresolved Confusions" do
+    test_root =
+      Path.join(
+        System.tmp_dir!(),
+        "symphony-elixir-agent-provider-confusions-#{System.unique_integer([:positive])}"
+      )
+
+    workspace_root = Path.join(test_root, "workspaces")
+    Application.put_env(:symphony_elixir, :agent_provider_adapters, %{"fake" => FakeProviderAdapter})
+
+    on_exit(fn ->
+      Application.delete_env(:symphony_elixir, :agent_provider_adapters)
+      File.rm_rf(test_root)
+    end)
+
+    write_workflow_file!(Workflow.workflow_file_path(),
+      workspace_root: workspace_root,
+      agent_provider_kind: "fake",
+      agent_provider_options: %{"emit_confusion_signal" => true},
+      max_turns: 20,
+      prompt: "Confusions workflow signal prompt."
+    )
+
+    issue = %Issue{
+      id: "issue-confusions",
+      identifier: "TAPD-CONFUSIONS",
+      title: "Stop after unresolved Confusions",
+      description: "Do not continue a blocked workflow.",
+      state: "In Progress",
+      labels: []
+    }
+
+    assert_raise RuntimeError, ~r/Agent run failed.*confusions/, fn ->
+      AgentRunner.run(issue, self(),
+        run_id: "run-confusions",
+        issue_state_fetcher: fn ["issue-confusions"] -> {:ok, [issue]} end
+      )
+    end
+
+    assert_received {:fake_provider_run_turn, %ProviderConfig{kind: "fake"}, _session, _prompt, ^issue, _run_opts}
+    refute_received {:fake_provider_run_turn, %ProviderConfig{kind: "fake"}, _session, _prompt, ^issue, _run_opts}
+
+    agent_events =
+      wait_for_agent_session_events(
+        %{
+          issue_id: "issue-confusions",
+          issue_identifier: "TAPD-CONFUSIONS",
+          run_id: "run-confusions"
+        },
+        "agent_run_failed"
+      )
+
+    turn_blocked = Enum.find(agent_events, &(&1["event"] == "agent_turn_blocked"))
+    assert turn_blocked["error_code"] == "confusions"
+    assert turn_blocked["retryable"] == false
+    refute Enum.any?(agent_events, &(&1["event"] == "agent_continuation_started"))
   end
 
   test "runner emits provider-neutral timeout, cleanup, and failed run events" do
