@@ -34,6 +34,18 @@ defmodule SymphonyElixir.Workflow.Extensions.CodingPrDelivery.Readiness.ReviewHa
              )
   end
 
+  test "validate does not require review feedback when change proposals are disabled" do
+    workflow = put_in(@workflow, [:profile_options, "requirements", "change_proposal"], false)
+
+    assert :ok =
+             ReviewHandoff.validate(
+               workflow,
+               issue([]),
+               target_state_name: "In Review",
+               evidence: ready_evidence_without("feedback")
+             )
+  end
+
   test "validate fails closed on non-keyword opts" do
     assert {:error, {:review_handoff_not_ready, details}} =
              ReviewHandoff.validate(@workflow, issue([change_proposal_attachment()]), [:invalid_opts])

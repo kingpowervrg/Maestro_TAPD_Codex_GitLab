@@ -58,12 +58,17 @@ defmodule SymphonyElixir.Orchestrator.Runtime do
   defp workflow_settings(settings) when is_map(settings) do
     %{
       workflow: Map.get(settings, :workflow),
+      repo: repo_workflow_settings(Map.get(settings, :repo)),
       tracker: %{
         kind: settings |> Map.get(:tracker) |> tracker_kind(),
         lifecycle: settings |> Map.get(:tracker) |> TrackerConfig.lifecycle()
       }
     }
   end
+
+  defp repo_workflow_settings(%{provider: provider}), do: %{provider: provider}
+  defp repo_workflow_settings(%{"provider" => provider}), do: %{"provider" => provider}
+  defp repo_workflow_settings(_repo), do: %{}
 
   defp tracker_kind(%{kind: kind}) when is_binary(kind), do: kind
   defp tracker_kind(%{"kind" => kind}) when is_binary(kind), do: kind

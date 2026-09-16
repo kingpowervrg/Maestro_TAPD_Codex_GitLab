@@ -1086,6 +1086,7 @@ defmodule SymphonyElixir.RepoArchitectureTest do
     {"lib/symphony_elixir/path_safety.ex", "SymphonyElixir.PathSafety"},
     {"lib/symphony_elixir/repo.ex", "SymphonyElixir.Repo"},
     {"lib/symphony_elixir/repo_provider.ex", "SymphonyElixir.RepoProvider"},
+    {"lib/symphony_elixir/run_id.ex", "SymphonyElixir.RunId"},
     {"lib/symphony_elixir/specs_check.ex", "SymphonyElixir.SpecsCheck"},
     {"lib/symphony_elixir/tracker.ex", "SymphonyElixir.Tracker"},
     {"lib/symphony_elixir/workflow.ex", "SymphonyElixir.Workflow"},

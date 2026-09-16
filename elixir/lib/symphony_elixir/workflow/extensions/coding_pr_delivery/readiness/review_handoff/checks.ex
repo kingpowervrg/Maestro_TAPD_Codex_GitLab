@@ -35,7 +35,7 @@ defmodule SymphonyElixir.Workflow.Extensions.CodingPrDelivery.Readiness.ReviewHa
       Validation.check(validation, repo, change_proposal),
       ChangeProposal.check(workflow, change_proposal),
       ChangeProposalChecks.check(workflow, change_proposal_checks, repo, change_proposal),
-      Feedback.check(feedback)
+      Feedback.check(workflow, feedback)
     ] ++ StructuredPlanReviewHandoff.checks(workflow, issue, observations, opts)
   end
 end

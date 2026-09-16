@@ -64,7 +64,8 @@ defmodule SymphonyElixir.Workflow.Extensions.CodingPrDelivery.Readiness.ReviewHa
     change_proposal_linked: "change_proposal.linked",
     change_proposal_not_required: "change_proposal.not_required",
     checks_ready: "checks.ready",
-    feedback_clear: "feedback.clear"
+    feedback_clear: "feedback.clear",
+    feedback_not_required: "feedback.not_required"
   }
 
   @spec schema() :: String.t()

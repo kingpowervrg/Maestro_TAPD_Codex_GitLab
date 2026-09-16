@@ -373,6 +373,7 @@ $env:GITLAB_PROJECT_ID="koa-client-code/koa-client-code"
 
 本地启动命令：`./elixir/bin/start-tapd-gitlab`。
 本地重启命令：`./elixir/bin/restart-tapd-gitlab`。
+本地停止命令：`./elixir/bin/stop-tapd-gitlab`。
 
 ## 10. Remaining Decisions
 

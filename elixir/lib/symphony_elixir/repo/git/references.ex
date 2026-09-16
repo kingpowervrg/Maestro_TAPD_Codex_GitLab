@@ -40,8 +40,11 @@ defmodule SymphonyElixir.Repo.Git.References do
     |> String.split("\n", trim: true)
     |> Enum.find_value(fn line ->
       case String.split(line, ~r/\s+/, parts: 2) do
-        [sha, _ref] when sha != "" -> sha
-        _other -> nil
+        [sha, remote_ref] ->
+          if valid_object_id?(sha) and String.starts_with?(remote_ref, "refs/"), do: sha
+
+        _other ->
+          nil
       end
     end)
     |> case do
@@ -49,4 +52,7 @@ defmodule SymphonyElixir.Repo.Git.References do
       nil -> {:error, Error.branch_not_found(:published_head_sha, path, ref)}
     end
   end
+
+  defp valid_object_id?(value) when is_binary(value),
+    do: Regex.match?(~r/\A(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})\z/, value)
 end

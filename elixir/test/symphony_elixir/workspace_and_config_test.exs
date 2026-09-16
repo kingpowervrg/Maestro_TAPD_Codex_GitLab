@@ -3698,6 +3698,39 @@ defmodule SymphonyElixir.WorkspaceAndConfigTest do
     Dispatch.sort_issues_for_dispatch(issues)
   end
 
+  test "dispatch context preserves TAPD Git repo settings for dynamic tool planning" do
+    assert {:ok, template_path} =
+             SymphonyElixir.Workflow.Template.resolve("tapd/git/codex")
+
+    Workflow.set_workflow_file_path(template_path)
+
+    settings = Config.settings!()
+    workflow_settings = OrchestratorRuntime.dispatch_context().workflow_settings
+
+    assert workflow_settings.repo == %{provider: settings.repo.provider}
+
+    assert SymphonyElixir.Config.TapdGitCodexCapabilities.required_capabilities(workflow_settings) == [
+             "repo.remote_search",
+             "repo.sparse_add",
+             "tracker.complete_ai_workflow"
+           ]
+
+    assert {:ok, tool_context} =
+             SymphonyElixir.Workflow.DynamicToolPlan.from_opts(
+               workflow_settings: workflow_settings,
+               issue: %{state: "new", lifecycle_phase: "todo", entity_type: "bug"}
+             )
+
+    tool_names =
+      tool_context
+      |> SymphonyElixir.Agent.DynamicTool.Context.tool_specs()
+      |> Enum.map(&Map.fetch!(&1, "name"))
+
+    assert "repo_remote_search" in tool_names
+    assert "repo_sparse_add" in tool_names
+    assert "tapd_complete_ai_workflow" in tool_names
+  end
+
   defp should_dispatch_issue(issue, state) do
     Dispatch.should_dispatch_issue?(
       issue,

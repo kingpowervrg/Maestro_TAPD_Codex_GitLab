@@ -2,6 +2,7 @@ defmodule SymphonyElixir.Agent.Runner.RunContext do
   @moduledoc false
 
   alias SymphonyElixir.Issue
+  alias SymphonyElixir.RunId
 
   @type worker_host :: String.t() | nil
 
@@ -62,10 +63,8 @@ defmodule SymphonyElixir.Agent.Runner.RunContext do
 
   @spec generate_run_id(term()) :: String.t()
   def generate_run_id(%Issue{id: issue_id}) when is_binary(issue_id) do
-    "run-" <> Integer.to_string(System.unique_integer([:positive])) <> "-" <> issue_id
+    RunId.generate(issue_id)
   end
 
-  def generate_run_id(_issue) do
-    "run-" <> Integer.to_string(System.unique_integer([:positive]))
-  end
+  def generate_run_id(_issue), do: RunId.generate()
 end

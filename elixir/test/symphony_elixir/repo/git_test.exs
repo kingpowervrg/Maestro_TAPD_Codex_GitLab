@@ -227,6 +227,19 @@ defmodule SymphonyElixir.Repo.GitTest do
              )
   end
 
+  test "published head ignores SSH warnings merged into command output" do
+    published_sha = String.duplicate("c", 40)
+
+    assert {:ok, ^published_sha} =
+             Repo.published_head_sha(".", "origin", "main",
+               command_runner: fn "git", ["ls-remote", "origin", "refs/heads/main"] ->
+                 {:ok,
+                  "** WARNING: connection is not using a post-quantum key exchange algorithm.\n" <>
+                    "#{published_sha}\trefs/heads/main\n"}
+               end
+             )
+  end
+
   test "classifies ff-only merge divergence" do
     assert {:error, %Error{code: :branch_diverged, operation: :merge}} =
              Repo.merge(".", "origin/main",

@@ -5,6 +5,7 @@ defmodule SymphonyElixir.Orchestrator.Launch do
   alias SymphonyElixir.Config
   alias SymphonyElixir.Issue
   alias SymphonyElixir.Orchestrator.Retry
+  alias SymphonyElixir.RunId
 
   @type emit_issue_dispatch ::
           (Logger.level(), atom(), Issue.t(), map(), map() -> :ok)
@@ -127,13 +128,7 @@ defmodule SymphonyElixir.Orchestrator.Launch do
     }
   end
 
-  defp issue_run_id(issue_id) when is_binary(issue_id) do
-    "run-" <> Integer.to_string(System.unique_integer([:positive])) <> "-" <> issue_id
-  end
-
-  defp issue_run_id(_issue_id) do
-    "run-" <> Integer.to_string(System.unique_integer([:positive]))
-  end
+  defp issue_run_id(issue_id), do: RunId.generate(issue_id)
 
   defp running_entries(%{running: running}) when is_map(running), do: running
   defp running_entries(_state), do: %{}

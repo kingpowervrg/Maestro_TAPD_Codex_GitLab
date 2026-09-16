@@ -5,6 +5,7 @@ defmodule SymphonyElixir.Workflow.Extensions.CodingPrDelivery.Readiness.ReviewHa
   alias SymphonyElixir.Workflow.Extensions.CodingPrDelivery.Readiness.ReviewHandoff.Checks.Support
   alias SymphonyElixir.Workflow.Extensions.CodingPrDelivery.Readiness.ReviewHandoff.Contract
   alias SymphonyElixir.Workflow.Extensions.CodingPrDelivery.Readiness.ReviewHandoff.ResultBuilder
+  alias SymphonyElixir.Workflow.Extensions.CodingPrDelivery.Readiness.ReviewHandoff.Target
 
   import ResultBuilder,
     only: [
@@ -21,9 +22,12 @@ defmodule SymphonyElixir.Workflow.Extensions.CodingPrDelivery.Readiness.ReviewHa
   @actionable_count_key Evidence.actionable_count_key()
   @passing_feedback_statuses Contract.passing_feedback_statuses()
 
-  @spec check(map() | term()) :: map()
-  def check(feedback) do
+  @spec check(map() | struct() | nil, map() | term()) :: map()
+  def check(workflow, feedback) do
     cond do
+      not Target.change_proposal_required?(workflow) ->
+        passed_check(check_key(:feedback_clear), observed_evidence_code(:feedback_not_required), [])
+
       not is_map(feedback) or map_size(feedback) == 0 ->
         missing_check(check_key(:feedback_clear), reason_code(:feedback_evidence_missing), "Review feedback evidence is required.", [])
 
