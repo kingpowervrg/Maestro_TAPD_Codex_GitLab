@@ -1,12 +1,12 @@
 # GitLab Git-only（SSH 写入 + 只读搜索）落地计划
 
-> 更新（2026-09-15）：本文已按 Maestro 当前实现重新校准。Lite 边界不再是“零 GitLab API”，而是“Git SSH 写入 + 唯一只读 GitLab blob 搜索 API”。MR、评论、Pipeline、审批和合并仍由人工处理。
+> 更新（2026-09-16）：两个真实 Bug 已完成 Maestro typed-tool 成功路径灰度。Lite 边界不再是“零 GitLab API”，而是“Git SSH 写入 + 唯一只读 GitLab blob 搜索 API”。MR、评论、Pipeline、审批和合并仍由人工处理。
 
-- 状态：In Progress（代码路径、模板、定向测试、Git SSH 写入 smoke 和历史质量门禁已完成；真实任务的 Maestro typed-tool 端到端灰度仍待完成）
+- 状态：Pilot（代码路径、模板、Git SSH 写入 smoke 和真实 Bug 成功路径已完成；Story、Confusion/异常路径及 GitLab 搜索稳定性仍待灰度）
 - 版本：Lite
 - 创建日期：2026-09-02
-- 代码对齐日期：2026-09-15
-- 最近完整质量门禁记录：2026-09-09
+- 代码对齐日期：2026-09-16（`4bbda19`）
+- 最近验证：2026-09-16（定向测试、格式、Lint、Dialyzer、secret scan 通过；全量测试剩 1 个可单独通过的事件排序波动）
 - 适用范围：Maestro Elixir Runtime
 - 目标实例：`gitlab-ee.funplus.io`
 - 目标仓库：`koa-client-code/koa-client-code`
@@ -74,6 +74,8 @@ TAPD Bug 还要求独立的 AI 工作流闭环：只有 Bug 的 `AI特殊工作�
 
 `repo_push` 是交付边界。成功必须同时满足工作分支已发布且 `publishedHeadSha` 与本地 `headSha` 一致。模板禁止直接向开发基线或最终集成分支提交或推送，也禁止普通 `--force`。
 
+远端 SHA 解析只接受合法的 40/64 位 Git object id 和 `refs/` 行，因此 SSH 的 post-quantum、locale 等 stderr 警告即使被合并到命令输出，也不会再被误判为 published SHA。
+
 ### 5.2 `git` Adapter 只增加 GitLab 只读搜索
 
 当前 Provider 配置仍是：
@@ -118,6 +120,8 @@ workflow:
 - `tracker.complete_ai_workflow`
 
 任一能力不可用时，配置加载返回 `tapd_git_codex_required_tool_unavailable`，不启动任务。
+
+Orchestrator dispatch context 会保留 `repo.provider` 设置，确保运行时 Dynamic Tool Plan 能解析以上三项能力。该路径已通过模板配置测试和真实任务 inventory 验证；不会再出现配置中已有工具、Agent 运行时却报告缺少 `repo_remote_search`、`repo_sparse_add` 或 `tracker.complete_ai_workflow` 的情况。
 
 最终 Repo inventory 应精确包含：
 
@@ -165,8 +169,15 @@ Bug：
 - 成功交付后调用 `tracker.complete_ai_workflow`，在状态仍有效且值仍为 `接受/处理`（或已幂等为 `AI已解决`）时写入 `AI已解决`，随后回读 Bug；只有回读确认后才以调用方提供的最终 body 更新原 canonical workpad。
 - 人工新增修改意见并把字段重置为 `接受/处理` 后，Bug 可重新派发。新一轮按未处理的人类评论 ID 建立 `Rework Round N`，继续原 workpad 和原已发布工作分支。
 - Bug 状态不改变。typed-tool blocker 等异常退出路径由 Orchestrator 尝试写入 `AI异常`；写入成功或失败均产生事件。
+- `change_proposal: false` 时，最终交接不要求 GitLab review feedback 证据；无任何人工评论的 Bug 仍会读取 snapshot 并完成 Confusions 检查，但不会因缺少评论而阻塞。
 
-### 5.6 目标运行配置
+### 5.6 灰度期间补充的运行稳定性
+
+- Run ID 由微秒时间、随机分量和可选 issue id 组成，避免快速重试或并发启动时复用旧 session/run 标识。
+- GitLab blob search 已在真实目标项目和 `v24.9.0/battle_royale` ref 上成功返回规范化的空结果（`count: 0`），但尚未验证正向命中；同一灰度中仍观测到约 56 秒后返回 HTTP 500 的请求。当前应视为外部搜索稳定性问题，继续保留监控和人工诊断。
+- `before_run` 曾因残留 `.git/shallow.lock` 连续失败两次，随后重试成功。正式扩大并发前需要补充 stale lock 诊断或安全恢复策略。
+
+### 5.7 目标运行配置
 
 ```yaml
 repo:
@@ -268,7 +279,10 @@ $env:GITLAB_PROJECT_ID="koa-client-code/koa-client-code"
 - [x] Bug success/exception 字段闭环及废弃字段禁用规则已实现。
 - [x] Bug 完成工具要求 canonical `workpad_id` 和最终 `body`，字段回读成功后才勾选最终 Workpad。
 - [x] Bug 重新接受后按新增评论 ID 建立返工轮次，并复用原发布分支。
-- [ ] 使用真实候选任务完成一次完全由 Maestro typed tools 驱动的成功路径灰度。
+- [x] 使用两个真实 Bug 完成完全由 Maestro typed tools 驱动的成功路径灰度，包括 commit、verified push、最终 Workpad、`AI已解决` 回读和 workspace 清理。
+- [x] 使用无任何评论的真实 Bug 验证 snapshot、Confusions 空集和最终交接路径。
+- [ ] 使用真实 Story 完成 push 后进入人工评审的成功路径灰度。
+- [ ] 使用真实 Bug 完成 Confusion 存在和 typed-tool blocker 的 `AI异常` 路径灰度。
 
 #### P0-5：测试与文档
 
@@ -279,9 +293,10 @@ $env:GITLAB_PROJECT_ID="koa-client-code/koa-client-code"
 - [x] TAPD Bug `接受/处理`、`AI已解决`、`AI异常`、候选过滤和完成工具测试。
 - [x] 本地 bare Git clone/branch/commit/push/published SHA 测试。
 - [x] Repo Provider、operations、testing 和模板文档已同步。
-- [ ] 2026-09-15 当前工作树变更完成定向测试和完整质量门禁复验。
+- [x] 2026-09-16 当前实现完成定向测试（134 tests、0 failures）、格式、Lint、Dialyzer、diff check 和 secret scan。
+- [ ] `make all` 获得无波动的完整通过记录；当前 2543 tests 中仅 `Observability.EventStoreTest` 的同时间事件顺序断言在全量并发运行时失败，单独复测通过。
 
-历史验证记录：2026-09-09 `make all` 通过，2493 tests、0 failures、19 skipped，覆盖率 72.98%，Dialyzer `Total errors: 0`；`make secret-scan` 通过。该记录早于 2026-09-15 的 Bug AI 异常闭环调整，不能替代当前复验。
+验证记录：2026-09-09 `make all` 通过，2493 tests、0 failures、19 skipped，覆盖率 72.98%，Dialyzer `Total errors: 0`；2026-09-16 定向测试 134 tests、0 failures，Dialyzer `Total errors: 0`，secret scan 通过。2026-09-16 全量覆盖率运行完成 2543 tests、19 skipped、覆盖率 73.16%，有 1 个上述事件排序波动，因此尚不能登记为新的完整绿色门禁。
 
 ### 6.2 Nice-to-Have（P1）
 
@@ -338,6 +353,15 @@ $env:GITLAB_PROJECT_ID="koa-client-code/koa-client-code"
 3. Maestro 将 `AI特殊工作流` 写为 `AI异常`、抑制重试并结束该次处理。
 4. 全流程不读取或写入已废弃的 `AI是否遇到异常` 字段。
 
+### 7.6 2026-09-16 真实 Bug 灰度记录
+
+| TAPD Bug | 场景 | 发布分支 | verified HEAD | 结果 |
+| --- | --- | --- | --- | --- |
+| `1798922` | 战斗详情隐藏玩家名；延续先前失败 workpad 后重新执行 | `maestro/tapd-1154044737001798922` | `b6a621eb5ada41dc383fc6a5be69d11e37aefb44` | 修改、验证、commit、verified push、最终 Workpad、`AI已解决` 回读和 workspace 清理完成 |
+| `1799175` | 战报分享按钮屏蔽；TAPD 无任何评论 | `maestro/tapd-1154044737001799175` | `a15c2db5a48566bdf46b3ab43e78448075b9b092` | snapshot、空 Confusions、远程搜索调用（0 matches）、稀疏展开、commit、verified push、最终 Workpad、`AI已解决` 回读和 workspace 清理完成 |
+
+灰度同时暴露两个需要继续跟踪的非成功路径问题：GitLab blob search 间歇性返回 HTTP 500，且实际文件定位仍依赖 sparse fallback，尚未验证正向命中；`1799175` 的 `before_run` 曾因残留 `.git/shallow.lock` 失败两次后才重试成功。二者未阻止最终交付，但在扩大并发前应完成诊断和恢复策略。
+
 所有场景中，唯一允许的 GitLab HTTP API 是 `repo_remote_search` 的只读 blob search；不得调用 MR、评论、Pipeline、审批或合并 API。
 
 ## 8. Success Metrics
@@ -366,7 +390,8 @@ $env:GITLAB_PROJECT_ID="koa-client-code/koa-client-code"
 - [x] Story 人工评审状态为 `status_5`，完成状态为 `status_6`；需求主任务还支持 `status_8`。
 - [x] `TAPD_BUG_AI_WORKFLOW_FIELD=custom_field_6`，字段选项已确认包含 `接受/处理`、`AI已解决`、`AI异常`。
 - [x] `TAPD_BUG_AI_MODEL_LEVEL_FIELD=custom_field_7`，字段选项已确认为 `low`、`medium`、`high`、`xhigh`。
-- [ ] 配置最小权限 `GITLAB_API_TOKEN`（`read_api`），并验证目标 GitLab 实例的 blob search 可用。
+- [x] 已配置 `GITLAB_API_TOKEN`，并在目标项目/ref 上验证 blob search 可成功调用且 Token 不进入 Agent shell。
+- [ ] 确认 Token 权限范围严格收敛为 `read_api`，并解决真实请求间歇性 HTTP 500/高延迟问题。
 - [ ] 正式重启前再次确认启用的工作项类型和历史候选范围，避免批量误触发。
 
 凭证应保存在外部 `0600` 环境文件中，默认路径为 `/home/admin2/workspace_other/Env/symphony/tapd-gitlab.env`；可通过 `SYMPHONY_TAPD_GITLAB_ENV_FILE` 覆盖。`.env.gitlab.local` 只保存外部文件指针或非敏感本地配置，不应承载长期凭证。重试运行上限也在该外部文件中通过 `SYMPHONY_MAX_RETRY_ATTEMPTS` 配置，默认值为 `3`；仅因执行槽已满而等待不会增加该计数，也不会启动模型会话。大型浅克隆仓库可通过 `SYMPHONY_WORKSPACE_HOOK_TIMEOUT_MS` 配置工作区钩子超时（建议 `300000`）；`before_run` 先比较远端与本地基线 SHA，相同则跳过 fetch。写入 `AI异常` 前后均回读 Bug，且只有字段仍为 `接受/处理`、状态仍允许 AI 执行时才写入，禁止覆盖 `AI已解决` 或其他人工值。Codex 模型通过 `SYMPHONY_AGENT_MODEL` 传给原生 `thread/start.model`；`AI模型等级` 通过 `TAPD_BUG_AI_MODEL_LEVEL_FIELD` 读取，按 Bug 分别把 `low`、`medium`、`high`、`xhigh` 传给原生 `turn/start.effort`。字段为空或非法时 effort 使用 `medium`，两项均无需修改核心 workflow 命令。
@@ -379,8 +404,9 @@ $env:GITLAB_PROJECT_ID="koa-client-code/koa-client-code"
 
 ### Blocking
 
-1. **[待验证]** 真实 GitLab 实例的 `scope=blobs` 搜索是否对目标项目、目标 ref 和当前 `read_api` Token 稳定返回；需要纳入灰度前预检。
-2. **[待执行]** 选择一个明确授权的 Story 和一个 Bug，分别完成 typed-tool E2E；Bug 场景还需覆盖 Confusion 存在/不存在分支。
+1. **[稳定性]** 真实 GitLab `scope=blobs` 已有成功空结果，但尚无正向命中；同一 ref/项目仍间歇性返回 HTTP 500 且失败请求约 56 秒才返回，需要补充正向预检、超时和可重试分类。
+2. **[待执行]** 选择一个明确授权的 Story 完成 typed-tool E2E，并为 Bug 补齐 Confusion 存在和 typed-tool blocker 的 `AI异常` 灰度。
+3. **[稳定性]** 明确 `.git/shallow.lock` 的 stale 判定和安全恢复方式，避免 workspace retry 依赖锁文件自行消失。
 
 ### Non-Blocking
 
@@ -389,17 +415,17 @@ $env:GITLAB_PROJECT_ID="koa-client-code/koa-client-code"
 
 ## 11. Remaining Rollout Order
 
-1. 运行当前工作树的定向测试、架构测试、`make all` 和 secret scan。
-2. 验证外部环境文件权限、GitLab `read_api` Token、API endpoint/project 推导和搜索结果。
-3. 在授权测试 Bug 上验证 candidate 过滤和 Confusions 前置检查，不存在阻塞时完成成功路径。
+1. 复跑 `make all`，取得不含事件排序波动的完整绿色记录。
+2. 对 GitLab blob search 的 HTTP 500/高延迟补充预检、可重试分类和运维诊断。
+3. 为 `.git/shallow.lock` 补充 stale 判定或安全恢复方案并验证重试行为。
 4. 在单独授权 Bug 上验证当前 Confusion 或 typed-tool blocker 会写入 `AI异常` 且不重试。
-5. 在授权 Story 上验证 push 后进入人工评审。
+5. 在授权 Story 上验证 verified push 后进入人工评审。
 6. 保持 `max_concurrent_agents: 1` 灰度，观察事件、workspace 清理和 object cache。
-7. 稳定后再扩大 TAPD 工作项类型或候选范围。
+7. 确认 Token 最小权限和候选范围后，再扩大 TAPD 工作项类型或并发。
 
 ## 12. Rollback
 
-- 停止 `tapd/git/codex` 实例即可阻止新任务派发。
+- 运行 `./elixir/bin/stop-tapd-gitlab` 停止本地 `tapd/git/codex` 实例即可阻止新任务派发；脚本会核验端口监听进程归属并等待优雅退出。
 - 撤销 GitLab API Token 只会关闭远程搜索能力；启动门禁会阻止缺少必需工具的工作流继续运行。
 - 撤销 SSH Key 可阻止后续 clone/fetch/push。
 - 回滚不会自动删除已推送的远端分支，也不会修改人工创建的 MR、Pipeline、审批或合并状态。
