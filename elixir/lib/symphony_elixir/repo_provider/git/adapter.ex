@@ -4,16 +4,15 @@ defmodule SymphonyElixir.RepoProvider.Git.Adapter do
 
   This adapter exists so workflows backed by a plain Git remote can pass
   repo-provider configuration validation without pretending that the remote
-  supports change proposals, reviews, checks, or merges. It optionally exposes
-  read-only GitLab code search when a workflow opts into that narrow API.
+  supports change proposals, reviews, checks, merges, or provider HTTP APIs.
   Repository checkout, diff, commit, and push operations remain owned by
-  `SymphonyElixir.Repo`.
+  `SymphonyElixir.Repo`. External packages may replace this registry entry to
+  add provider-specific capabilities.
   """
 
   @behaviour SymphonyElixir.RepoProvider.Adapter
 
   alias SymphonyElixir.RepoProvider.ConfigValidator
-  alias SymphonyElixir.RepoProvider.GitLab.CodeSearch
   alias SymphonyElixir.RepoProvider.Kinds
 
   @provider_kind Kinds.git()
@@ -28,8 +27,5 @@ defmodule SymphonyElixir.RepoProvider.Git.Adapter do
   def validate_config(repo), do: ConfigValidator.validate(repo, __MODULE__)
 
   @impl true
-  def capabilities, do: [:code_search]
-
-  @impl true
-  def code_search(repo, opts), do: CodeSearch.search(repo, opts)
+  def capabilities, do: []
 end

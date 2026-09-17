@@ -20,6 +20,7 @@ defmodule SymphonyElixir.Workflow.Extension.ContributionCallbacks do
   @callback children(keyword()) :: [Supervisor.child_spec()]
   @callback typed_tool_failure_retry_policies() :: map()
   @callback typed_tool_failure_resource_identity(map(), term()) :: {String.t(), term()} | nil
+  @callback required_dynamic_tool_capabilities(map()) :: [String.t()]
 
   @optional_callbacks operator_commands: 0,
                       tool_result_recorders: 0,
@@ -31,6 +32,7 @@ defmodule SymphonyElixir.Workflow.Extension.ContributionCallbacks do
                       profiles: 0,
                       template_entries: 0,
                       children: 1,
+                      required_dynamic_tool_capabilities: 1,
                       typed_tool_failure_retry_policies: 0,
                       typed_tool_failure_resource_identity: 2
 end

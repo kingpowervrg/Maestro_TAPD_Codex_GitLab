@@ -10,7 +10,6 @@ defmodule SymphonyElixir.RepoProvider.ToolExecutor do
   alias SymphonyElixir.RepoProvider.ChangeProposalBody
   alias SymphonyElixir.RepoProvider.CheckRun
   alias SymphonyElixir.RepoProvider.Error
-  alias SymphonyElixir.RepoProvider.GitLab.CodeSearch
 
   @schema_version "1"
   @risk_flags ["external_network", "secret_access", "external_process", "privileged_api"]
@@ -86,7 +85,7 @@ defmodule SymphonyElixir.RepoProvider.ToolExecutor do
       close_spec(repo),
       remote_search_spec(repo)
     ]
-    |> Enum.filter(&(requirements_satisfied?(&1, supported) and configured?(&1, repo)))
+    |> Enum.filter(&(requirements_satisfied?(&1, supported) and tool_enabled?(&1, repo)))
   end
 
   def tool_specs(_repo), do: []
@@ -158,7 +157,7 @@ defmodule SymphonyElixir.RepoProvider.ToolExecutor do
   end
 
   def execute(repo, @remote_search_tool, arguments, opts) when is_map(repo) and is_list(opts) do
-    if supported?(repo, @remote_search_tool) and CodeSearch.enabled?(repo),
+    if supported?(repo, @remote_search_tool),
       do: remote_search(repo, arguments, opts),
       else: unsupported_tool(repo)
   end
@@ -509,7 +508,7 @@ defmodule SymphonyElixir.RepoProvider.ToolExecutor do
       repo,
       @remote_search_tool,
       @remote_search_capability,
-      "Search GitLab repository blobs at a remote ref before expanding the local sparse checkout. The API token remains server-side.",
+      "Search remote repository blobs at a ref before expanding the local sparse checkout. Provider credentials remain server-side.",
       "read_only",
       %{
         "type" => "object",
@@ -549,8 +548,8 @@ defmodule SymphonyElixir.RepoProvider.ToolExecutor do
     Enum.all?(requirements(tool), &MapSet.member?(supported, &1))
   end
 
-  defp configured?(%{"name" => @remote_search_tool}, repo), do: CodeSearch.enabled?(repo)
-  defp configured?(_spec, _repo), do: true
+  defp tool_enabled?(%{"name" => tool}, repo),
+    do: RepoProvider.dynamic_tool_enabled?(repo, tool)
 
   defp requirements(tool), do: Map.get(@tool_requirements, tool, [])
 

@@ -1,5 +1,10 @@
 # Operations Guide
 
+The `tapd/git/codex` operator runbook is owned by the independent
+`extensions/maestro_tapd_gitlab_lite/docs/operations.md` package documentation.
+The material retained below describes compatibility behavior; new Lite-only
+configuration and operations changes belong in the extension.
+
 This guide is for people who want to run Maestro beyond the local demo.
 
 Core principle:

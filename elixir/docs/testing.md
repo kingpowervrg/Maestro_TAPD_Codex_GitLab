@@ -1,5 +1,8 @@
 # Testing Guide
 
+Independent TAPD + GitLab Lite package and three-mode validation commands are
+documented in `extensions/maestro_tapd_gitlab_lite/docs/testing.md`.
+
 This guide covers local quality gates, secret scanning, and live external E2E
 validation for the Maestro Elixir runtime. Concrete implementation identifiers
 still use compatibility names such as `SymphonyElixir`, `symphony`, and

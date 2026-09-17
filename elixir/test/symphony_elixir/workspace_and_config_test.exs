@@ -1,6 +1,18 @@
 defmodule SymphonyElixir.WorkspaceAndConfigTest do
   use SymphonyElixir.TestSupport
 
+  setup do
+    previous_adapters = Application.get_env(:symphony_elixir, :repo_provider_adapters)
+
+    on_exit(fn ->
+      if is_nil(previous_adapters) do
+        Application.delete_env(:symphony_elixir, :repo_provider_adapters)
+      else
+        Application.put_env(:symphony_elixir, :repo_provider_adapters, previous_adapters)
+      end
+    end)
+  end
+
   alias Ecto.Changeset
   alias SymphonyElixir.AgentProvider.Codex.Settings, as: CodexSettings
   alias SymphonyElixir.AgentProvider.Codex.Settings.StringOrMap
@@ -3184,23 +3196,6 @@ defmodule SymphonyElixir.WorkspaceAndConfigTest do
     assert TrackerConfig.provider(settings.tracker)["assignee"] == "王权"
   end
 
-  test "TAPD Bug AI model level field resolves from its environment variable" do
-    previous_field = System.get_env("TAPD_BUG_AI_MODEL_LEVEL_FIELD")
-    on_exit(fn -> restore_env("TAPD_BUG_AI_MODEL_LEVEL_FIELD", previous_field) end)
-    System.put_env("TAPD_BUG_AI_MODEL_LEVEL_FIELD", "custom_field_7")
-
-    assert {:ok, settings} =
-             Schema.parse(%{
-               tracker: %{
-                 kind: "tapd",
-                 provider: %{"platform" => %{"workspace_id" => "53000000"}}
-               }
-             })
-
-    assert get_in(TrackerConfig.provider(settings.tracker), ["platform", "bug_ai_model_level", "field"]) ==
-             "custom_field_7"
-  end
-
   test "schema resolves sandbox policies from explicit and default workspaces" do
     explicit_policy = %{"type" => "workspaceWrite", "writableRoots" => ["/tmp/explicit"]}
 
@@ -3709,7 +3704,7 @@ defmodule SymphonyElixir.WorkspaceAndConfigTest do
 
     assert workflow_settings.repo == %{provider: settings.repo.provider}
 
-    assert SymphonyElixir.Config.TapdGitCodexCapabilities.required_capabilities(workflow_settings) == [
+    assert MaestroTapdGitlabLite.Workflow.CapabilityGate.required_capabilities(workflow_settings) == [
              "repo.remote_search",
              "repo.sparse_add",
              "tracker.complete_ai_workflow"

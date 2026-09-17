@@ -1,8 +1,8 @@
-defmodule SymphonyElixir.RepoProvider.GitLabCodeSearchTest do
+defmodule SymphonyElixir.Extension.TapdGitlabLiteIntegrationTest do
   use ExUnit.Case, async: true
 
+  alias MaestroTapdGitlabLite.Repo.GitlabCodeSearch, as: CodeSearch
   alias SymphonyElixir.RepoProvider
-  alias SymphonyElixir.RepoProvider.GitLab.CodeSearch
 
   @token "gitlab-test-token-never-log"
 

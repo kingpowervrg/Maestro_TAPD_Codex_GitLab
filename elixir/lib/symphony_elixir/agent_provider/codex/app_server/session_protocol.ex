@@ -61,15 +61,15 @@ defmodule SymphonyElixir.AgentProvider.Codex.AppServer.SessionProtocol do
   @spec reasoning_effort(map()) :: String.t()
   def reasoning_effort(issue) when is_map(issue) do
     issue
-    |> custom_fields()
-    |> map_value("ai_model_level")
+    |> agent_options()
+    |> map_value("reasoning_effort")
     |> normalize_reasoning_effort()
   end
 
   def reasoning_effort(_issue), do: @default_reasoning_effort
 
-  defp custom_fields(issue) do
-    case map_value(issue, "custom_fields") do
+  defp agent_options(issue) do
+    case map_value(issue, "agent_options") do
       fields when is_map(fields) -> fields
       _fields -> %{}
     end
@@ -82,11 +82,11 @@ defmodule SymphonyElixir.AgentProvider.Codex.AppServer.SessionProtocol do
 
   defp normalize_reasoning_effort(_value), do: @default_reasoning_effort
 
-  defp map_value(map, "custom_fields") when is_map(map),
-    do: Map.get(map, "custom_fields") || Map.get(map, :custom_fields)
+  defp map_value(map, "agent_options") when is_map(map),
+    do: Map.get(map, "agent_options") || Map.get(map, :agent_options)
 
-  defp map_value(map, "ai_model_level") when is_map(map),
-    do: Map.get(map, "ai_model_level") || Map.get(map, :ai_model_level)
+  defp map_value(map, "reasoning_effort") when is_map(map),
+    do: Map.get(map, "reasoning_effort") || Map.get(map, :reasoning_effort)
 
   defp send_initialize(port, read_timeout_ms) do
     payload = %{

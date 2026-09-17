@@ -1,11 +1,12 @@
 # TAPD + GitLab Lite 独立扩展与上游同步计划
 
-- 状态：Proposed
+- 状态：Implemented（2026-09-17；P1/P2 保持后续事项）
 - 创建日期：2026-09-16
 - 对比基线：本地原始项目 `Maestro` 的 `33c970b`
 - 当前实现：`Maestro_TAPD_Codex_GitLab` 的 `337d5b1`
 - 关联计划：[`gitlab_repo_provider_lite.zh-CN.md`](./gitlab_repo_provider_lite.zh-CN.md)
 - 适用范围：Maestro Elixir Runtime
+- 执行记录：[`extensions/maestro_tapd_gitlab_lite/docs/upstream_rehearsal_2026-09-17.md`](../../../extensions/maestro_tapd_gitlab_lite/docs/upstream_rehearsal_2026-09-17.md)
 
 ## 1. Problem Statement
 

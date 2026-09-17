@@ -1,7 +1,5 @@
-defmodule SymphonyElixir.RepoProvider.GitLab.CodeSearch do
+defmodule MaestroTapdGitlabLite.Repo.GitlabCodeSearch do
   @moduledoc false
-
-  alias SymphonyElixir.RepoProvider.Config, as: RepoConfig
 
   @token_env "GITLAB_API_TOKEN"
   @default_limit 20
@@ -12,7 +10,7 @@ defmodule SymphonyElixir.RepoProvider.GitLab.CodeSearch do
   @spec enabled?(RepoConfig.t() | map()) :: boolean()
   def enabled?(repo) do
     repo
-    |> RepoConfig.option("remote_code_search")
+    |> option("remote_code_search")
     |> normalize_string()
     |> case do
       "gitlab" -> true
@@ -70,10 +68,10 @@ defmodule SymphonyElixir.RepoProvider.GitLab.CodeSearch do
 
   defp api_base_url(repo) do
     configured =
-      RepoConfig.option(repo, "gitlab_api_base_url") ||
+      option(repo, "gitlab_api_base_url") ||
         System.get_env("GITLAB_API_BASE_URL")
 
-    case normalize_string(configured) || infer_api_base_url(RepoConfig.remote_url(repo)) do
+    case normalize_string(configured) || infer_api_base_url(remote_url(repo)) do
       value when is_binary(value) -> {:ok, String.trim_trailing(value, "/")}
       nil -> {:error, :missing_gitlab_api_base_url}
     end
@@ -81,9 +79,9 @@ defmodule SymphonyElixir.RepoProvider.GitLab.CodeSearch do
 
   defp project(repo) do
     configured =
-      RepoConfig.option(repo, "gitlab_project_id") ||
+      option(repo, "gitlab_project_id") ||
         System.get_env("GITLAB_PROJECT_ID") ||
-        RepoConfig.repository(repo)
+        repository(repo)
 
     case normalize_string(configured) do
       value when is_binary(value) -> {:ok, value}
@@ -100,8 +98,11 @@ defmodule SymphonyElixir.RepoProvider.GitLab.CodeSearch do
 
   defp result_limit(opts) do
     case Keyword.get(opts, :max_results, @default_limit) do
-      value when is_integer(value) and value in 1..@max_limit -> {:ok, value}
-      _value -> {:error, {:invalid_arguments, "max_results must be an integer from 1 to #{@max_limit}."}}
+      value when is_integer(value) and value in 1..@max_limit ->
+        {:ok, value}
+
+      _value ->
+        {:error, {:invalid_arguments, "max_results must be an integer from 1 to #{@max_limit}."}}
     end
   end
 
@@ -227,7 +228,9 @@ defmodule SymphonyElixir.RepoProvider.GitLab.CodeSearch do
 
     cond do
       uri.scheme in ["http", "https"] and is_binary(uri.host) ->
-        authority = if uri.port && uri.port not in [80, 443], do: "#{uri.host}:#{uri.port}", else: uri.host
+        authority =
+          if uri.port && uri.port not in [80, 443], do: "#{uri.host}:#{uri.port}", else: uri.host
+
         "#{uri.scheme}://#{authority}/api/v4"
 
       uri.scheme in ["ssh", "git"] and is_binary(uri.host) ->
@@ -251,7 +254,7 @@ defmodule SymphonyElixir.RepoProvider.GitLab.CodeSearch do
 
   defp timeout_ms(repo) do
     repo
-    |> RepoConfig.runtime_http_timeout_seconds()
+    |> nested([:runtime, "http_timeout_seconds"])
     |> parse_positive_integer(@default_timeout_seconds)
     |> Kernel.*(1_000)
   end
@@ -298,6 +301,20 @@ defmodule SymphonyElixir.RepoProvider.GitLab.CodeSearch do
   rescue
     ArgumentError -> nil
   end
+
+  defp option(repo, key), do: nested(repo, [:provider, "options", key])
+  defp remote_url(repo), do: nested(repo, [:remote, "url"])
+  defp repository(repo), do: nested(repo, [:provider, "repository"])
+
+  defp nested(value, []), do: value
+
+  defp nested(map, [key | rest]) when is_map(map) do
+    map
+    |> map_value(to_string(key))
+    |> nested(rest)
+  end
+
+  defp nested(_value, _path), do: nil
 
   defp safe_diagnostic(%{__struct__: module}) when is_atom(module), do: inspect(module)
   defp safe_diagnostic(value) when is_atom(value), do: Atom.to_string(value)

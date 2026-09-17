@@ -1172,7 +1172,7 @@ defmodule SymphonyElixir.RepoArchitectureTest do
   @explicit_module_files [
     {"lib/symphony_elixir/config/schema.ex", "SymphonyElixir.Config.Schema"},
     {"lib/symphony_elixir/workflow/execution_profile_registry.ex", "SymphonyElixir.Workflow.ExecutionProfileRegistry"},
-    {"lib/symphony_elixir/workflow/extension.ex", "SymphonyElixir.Workflow.Extension"},
+    {"../extensions/maestro_core_contracts/lib/symphony_elixir/workflow/extension.ex", "SymphonyElixir.Workflow.Extension"},
     {"lib/symphony_elixir/workflow/profile.ex", "SymphonyElixir.Workflow.Profile"},
     {"lib/symphony_elixir/workflow/route_policy.ex", "SymphonyElixir.Workflow.RoutePolicy"},
     {"lib/symphony_elixir/observability/event_store.ex", "SymphonyElixir.Observability.EventStore"},
@@ -2174,7 +2174,7 @@ defmodule SymphonyElixir.RepoArchitectureTest do
 
   test "workflow extension behaviour stays a minimal runtime contract" do
     violations =
-      "lib/symphony_elixir/workflow/extension.ex"
+      "../extensions/maestro_core_contracts/lib/symphony_elixir/workflow/extension.ex"
       |> forbidden_matches(@forbidden_workflow_extension_runtime_contract_callback_patterns)
 
     assert violations == []

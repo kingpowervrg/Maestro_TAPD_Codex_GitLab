@@ -138,6 +138,20 @@ defmodule SymphonyElixir.RepoProvider do
   def dynamic_tools(repo) when is_map(repo), do: ToolExecutor.tool_specs(Config.new(repo))
   def dynamic_tools(_repo), do: []
 
+  @spec dynamic_tool_enabled?(repo_config() | map(), String.t()) :: boolean()
+  def dynamic_tool_enabled?(repo, tool) when is_map(repo) and is_binary(tool) do
+    config = Config.new(repo)
+    module = adapter(config)
+
+    if function_exported?(module, :dynamic_tool_enabled?, 2) do
+      module.dynamic_tool_enabled?(config, tool) == true
+    else
+      tool != "repo_remote_search"
+    end
+  end
+
+  def dynamic_tool_enabled?(_repo, _tool), do: false
+
   @spec execute_dynamic_tool(String.t() | nil, term(), keyword()) ::
           SymphonyElixir.Agent.DynamicTool.Source.tool_result()
   def execute_dynamic_tool(tool, arguments, opts \\ []) do

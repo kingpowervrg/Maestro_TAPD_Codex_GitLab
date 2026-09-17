@@ -5,8 +5,9 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
   alias SymphonyElixir.Issue
   alias SymphonyElixir.Tracker
   alias SymphonyElixir.Tracker.Capabilities, as: TrackerCapabilities
+  alias SymphonyElixir.Tracker.IssuePolicy.Runtime, as: IssuePolicyRuntime
   alias SymphonyElixir.Tracker.Kinds
-  alias SymphonyElixir.Tracker.Tapd.{BugAIWorkflow, Client}
+  alias SymphonyElixir.Tracker.Tapd.Client
   alias SymphonyElixir.Tracker.Tapd.Client.Paths
   alias SymphonyElixir.Tracker.Tapd.Client.Response
   alias SymphonyElixir.Tracker.WorkpadRegistry
@@ -242,7 +243,7 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
       tool_spec(
         @complete_ai_workflow_tool,
         @complete_ai_workflow_capability,
-        "After a successful code change and push, mark the configured TAPD Bug AI special workflow field as resolved, read the Bug back, and update the canonical workpad with the caller-supplied final body. The final workpad is written only after read-back confirms AI已解决.",
+        "After a successful delivery, invoke the configured issue policy completion lifecycle, verify its read-back, and update the canonical workpad with the caller-supplied final body.",
         "write",
         %{
           "type" => "object",
@@ -477,45 +478,19 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
 
   defp complete_ai_workflow(tracker, arguments, opts) do
     with {:ok, args} <- complete_ai_workflow_args(arguments),
-         {:ok, field} <- configured_bug_ai_field(tracker),
          {:ok, issue} <- fetch_issue(tracker, args.issue_id, opts),
-         :ok <- validate_ai_workflow_completion(issue, tracker),
          :ok <- validate_ai_workflow_completion_readiness(issue, args.issue_id, opts),
-         :ok <- maybe_commit_ai_workflow_completion(tracker, issue, field, opts),
-         {:ok, completed_issue} <- fetch_verified_ai_workflow_completion(tracker, args.issue_id, opts),
+         {:ok, completion} <-
+           IssuePolicyRuntime.complete(tracker, %{
+             issue: issue,
+             fetch_issue: fn -> fetch_issue(tracker, args.issue_id, opts) end,
+             update_fields: fn fields -> update_issue_fields(tracker, issue.id, fields, opts) end
+           }),
          {:ok, comment} <- finalize_ai_workflow_workpad(tracker, args, opts) do
-      {:success, success_payload(%{"issue" => completed_issue, "comment" => comment})}
+      {:success, success_payload(%{"issue" => completed_issue_payload(completion), "comment" => comment})}
     else
       {:error, reason} -> typed_failure(reason)
     end
-  end
-
-  defp configured_bug_ai_field(tracker) do
-    case BugAIWorkflow.field(tracker) do
-      field when is_binary(field) -> {:ok, field}
-      _field -> {:error, {:invalid_configuration, "TAPD Bug AI workflow is not configured."}}
-    end
-  end
-
-  defp validate_ai_workflow_completion(%Issue{entity_type: "bug"} = issue, tracker) do
-    current_value = Map.get(issue.custom_fields, "ai_special_workflow")
-    active_states = Enum.map(BugAIWorkflow.active_states(tracker), &String.downcase/1)
-    current_state = issue.state |> to_string() |> String.trim() |> String.downcase()
-
-    cond do
-      current_state not in active_states ->
-        {:error, {:state_conflict, "TAPD Bug is no longer in an AI-active state."}}
-
-      current_value in [BugAIWorkflow.accepted_value(tracker), BugAIWorkflow.resolved_value(tracker)] ->
-        :ok
-
-      true ->
-        {:error, {:state_conflict, "TAPD Bug is not accepted for AI processing."}}
-    end
-  end
-
-  defp validate_ai_workflow_completion(%Issue{}, _tracker) do
-    {:error, {:invalid_arguments, "AI workflow completion is supported only for TAPD Bugs."}}
   end
 
   defp validate_ai_workflow_completion_readiness(%Issue{} = issue, issue_id, opts) do
@@ -526,47 +501,6 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
     else
       :ok
     end
-  end
-
-  defp maybe_commit_ai_workflow_completion(tracker, %Issue{} = issue, field, opts) do
-    resolved_value = BugAIWorkflow.resolved_value(tracker)
-
-    if Map.get(issue.custom_fields, "ai_special_workflow") == resolved_value do
-      :ok
-    else
-      with {:ok, response} <- request(tracker, "POST", Paths.bugs(), %{"id" => issue.id, field => resolved_value}, opts),
-           {:ok, _data} <- Response.decode_success_envelope(Paths.bugs(), response) do
-        :ok
-      end
-    end
-  end
-
-  defp fetch_verified_ai_workflow_completion(tracker, issue_id, opts) do
-    with {:ok, issue} <- fetch_issue(tracker, issue_id, opts),
-         :ok <- verify_ai_workflow_resolved(issue, tracker) do
-      {:ok, completed_ai_workflow_issue(issue, BugAIWorkflow.resolved_value(tracker))}
-    end
-  end
-
-  defp verify_ai_workflow_resolved(%Issue{entity_type: "bug"} = issue, tracker) do
-    expected = BugAIWorkflow.resolved_value(tracker)
-    actual = Map.get(issue.custom_fields, "ai_special_workflow")
-
-    if actual == expected do
-      :ok
-    else
-      {:error,
-       {:state_conflict,
-        %{
-          "message" => "TAPD Bug AI workflow read-back did not confirm the resolved value.",
-          "expected" => expected,
-          "actual" => actual
-        }}}
-    end
-  end
-
-  defp verify_ai_workflow_resolved(%Issue{}, _tracker) do
-    {:error, {:invalid_arguments, "AI workflow completion is supported only for TAPD Bugs."}}
   end
 
   defp finalize_ai_workflow_workpad(tracker, args, opts) do
@@ -583,14 +517,23 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
     )
   end
 
-  defp completed_ai_workflow_issue(%Issue{} = issue, resolved_value) do
+  defp completed_issue_payload(%{issue: %Issue{} = issue, custom_fields: custom_fields})
+       when is_map(custom_fields) do
     %{
       "id" => issue.id,
       "identifier" => issue.identifier,
-      "entityType" => "bug",
+      "entityType" => issue.entity_type,
       "state" => state_payload(issue.state, issue.lifecycle_phase),
-      "customFields" => %{"AI特殊工作流" => resolved_value, "aiSpecialWorkflow" => resolved_value}
+      "customFields" => custom_fields
     }
+  end
+
+  defp update_issue_fields(tracker, issue_id, fields, opts) when is_map(fields) do
+    with {:ok, response} <-
+           request(tracker, "POST", Paths.bugs(), Map.put(fields, "id", issue_id), opts),
+         {:ok, _data} <- Response.decode_success_envelope(Paths.bugs(), response) do
+      :ok
+    end
   end
 
   defp fetch_issue(tracker, issue_id, opts) do

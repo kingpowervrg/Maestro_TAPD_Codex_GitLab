@@ -11,8 +11,17 @@ config :symphony_elixir, :storage_table_catalog,
 
 config :symphony_elixir, :workflow_runtime_extensions,
   sources: [
-    SymphonyElixir.AssemblyCatalog.WorkflowExtensions
+    SymphonyElixir.AssemblyCatalog.WorkflowExtensions,
+    MaestroTapdGitlabLite.RegistrySource
   ]
+
+config :symphony_elixir, :repo_provider_adapters, %{
+  "git" => MaestroTapdGitlabLite.Repo.GitlabLiteBackend
+}
+
+config :symphony_elixir, :workspace_automation_sources, MaestroTapdGitlabLite.RepoBootstrap.AutomationSource
+
+config :symphony_elixir, :issue_policies, MaestroTapdGitlabLite.Tracker.CompanyTapdIssuePolicy
 
 config :symphony_elixir, :capability_sources,
   catalogs: [

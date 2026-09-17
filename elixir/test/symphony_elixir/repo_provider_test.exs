@@ -7,7 +7,6 @@ defmodule SymphonyElixir.RepoProviderTest do
   alias SymphonyElixir.RepoProvider.Config, as: RepoConfig
   alias SymphonyElixir.RepoProvider.ConfigValidator
   alias SymphonyElixir.RepoProvider.Error
-  alias SymphonyElixir.RepoProvider.Git
   alias SymphonyElixir.RepoProvider.GitHub
   alias SymphonyElixir.RepoProvider.Kinds
   alias SymphonyElixir.RepoProvider.Memory
@@ -17,7 +16,10 @@ defmodule SymphonyElixir.RepoProviderTest do
   test "supports known provider kinds and adapter lookup" do
     assert Enum.sort(RepoProvider.supported_kinds()) == Enum.sort(Kinds.built_in())
     assert RepoProvider.adapter_for(Kinds.cnb()) == CNB.Adapter
-    assert RepoProvider.adapter_for(Kinds.git()) == Git.Adapter
+
+    assert RepoProvider.adapter_for(Kinds.git()) ==
+             MaestroTapdGitlabLite.Repo.GitlabLiteBackend
+
     assert RepoProvider.adapter_for(Kinds.github()) == GitHub.Adapter
     assert RepoProvider.adapter_for("gitlab") == nil
     assert RepoProvider.adapter_for(:github) == nil

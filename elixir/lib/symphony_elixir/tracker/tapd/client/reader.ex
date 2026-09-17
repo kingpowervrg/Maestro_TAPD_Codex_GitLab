@@ -3,8 +3,9 @@ defmodule SymphonyElixir.Tracker.Tapd.Client.Reader do
 
   alias SymphonyElixir.Issue
   alias SymphonyElixir.Tracker.Config, as: TrackerConfig
-  alias SymphonyElixir.Tracker.Tapd.{BugAIWorkflow, ProviderOptions, WorkflowConfig}
+  alias SymphonyElixir.Tracker.IssuePolicy.Runtime, as: IssuePolicyRuntime
   alias SymphonyElixir.Tracker.Tapd.Client.{BugPayload, Errors, Fields, Paths, Request, StoryPayload, StoryRelations, WorkitemTypeScope}
+  alias SymphonyElixir.Tracker.Tapd.{ProviderOptions, WorkflowConfig}
 
   @page_limit 100
   @request_timeout_ms 30_000
@@ -128,8 +129,12 @@ defmodule SymphonyElixir.Tracker.Tapd.Client.Reader do
     statuses = state_names |> Enum.map(&Fields.normalize_string/1) |> Enum.reject(&is_nil/1)
 
     case statuses do
-      [] -> {:ok, []}
-      _statuses -> do_fetch_bugs_by_status(tracker, Enum.join(statuses, "|"), 1, [], request_fun)
+      [] ->
+        {:ok, []}
+
+      _statuses ->
+        filters = Keyword.get(opts, :policy_filters, %{})
+        do_fetch_bugs_by_status(tracker, Enum.join(statuses, "|"), filters, 1, [], request_fun)
     end
   end
 
@@ -254,11 +259,11 @@ defmodule SymphonyElixir.Tracker.Tapd.Client.Reader do
     end)
   end
 
-  defp do_fetch_bugs_by_status(tracker, status_filter, page, acc, request_fun) do
+  defp do_fetch_bugs_by_status(tracker, status_filter, filters, page, acc, request_fun) do
     params =
       %{"status" => status_filter, "page" => page, "limit" => @page_limit}
       |> maybe_put_bug_assignee(ProviderOptions.assignee(tracker))
-      |> maybe_put_ai_workflow_filter(tracker)
+      |> Map.merge(filters)
 
     with {:ok, body} <- Request.request("GET", Paths.bugs(), params, tracker: tracker, request_fun: request_fun),
          {:ok, issues, raw_count} <- BugPayload.decode(Paths.bugs(), body, tracker) do
@@ -267,46 +272,46 @@ defmodule SymphonyElixir.Tracker.Tapd.Client.Reader do
       if raw_count < @page_limit do
         {:ok, updated_acc}
       else
-        do_fetch_bugs_by_status(tracker, status_filter, page + 1, updated_acc, request_fun)
+        do_fetch_bugs_by_status(tracker, status_filter, filters, page + 1, updated_acc, request_fun)
       end
     end
   end
 
   defp maybe_fetch_candidate_bugs(tracker, opts) do
-    if BugAIWorkflow.enabled?(tracker) do
-      fetch_bugs_by_status(BugAIWorkflow.active_states(tracker), opts)
-    else
-      {:ok, []}
+    case IssuePolicyRuntime.candidate_scope("bug", tracker) do
+      %{states: states, filters: filters} when is_list(states) and is_map(filters) ->
+        fetch_bugs_by_status(states, Keyword.put(opts, :policy_filters, filters))
+
+      _scope ->
+        {:ok, []}
     end
   end
 
   defp maybe_fetch_bugs_by_requested_states(state_names, tracker, opts) do
-    bug_states = BugAIWorkflow.active_states(tracker)
-    requested_bug_states = Enum.filter(state_names, &(&1 in bug_states))
+    case IssuePolicyRuntime.candidate_scope("bug", tracker) do
+      %{states: states, filters: filters} when is_list(states) and is_map(filters) ->
+        requested_states = Enum.filter(state_names, &(&1 in states))
 
-    if BugAIWorkflow.enabled?(tracker) and requested_bug_states != [] do
-      fetch_bugs_by_status(requested_bug_states, opts)
-    else
-      {:ok, []}
+        if requested_states == [],
+          do: {:ok, []},
+          else: fetch_bugs_by_status(requested_states, Keyword.put(opts, :policy_filters, filters))
+
+      _scope ->
+        {:ok, []}
     end
   end
 
   defp maybe_fetch_bugs_by_ids([], _tracker, _opts), do: {:ok, []}
 
   defp maybe_fetch_bugs_by_ids(issue_ids, tracker, opts) do
-    if BugAIWorkflow.enabled?(tracker) do
-      fetch_bugs_by_ids(issue_ids, opts)
-    else
-      {:ok, []}
+    case IssuePolicyRuntime.candidate_scope("bug", tracker) do
+      %{} -> fetch_bugs_by_ids(issue_ids, opts)
+      nil -> {:ok, []}
     end
   end
 
   defp maybe_put_bug_assignee(params, nil), do: params
   defp maybe_put_bug_assignee(params, assignee), do: Map.put(params, "current_owner", assignee)
-
-  defp maybe_put_ai_workflow_filter(params, tracker) do
-    Map.put(params, BugAIWorkflow.field(tracker), BugAIWorkflow.accepted_value(tracker))
-  end
 
   defp normalize_issue_ids(issue_ids) do
     issue_ids

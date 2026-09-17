@@ -1,7 +1,8 @@
 defmodule SymphonyElixir.TapdNormalizerTest do
   use SymphonyElixir.TestSupport
 
-  alias SymphonyElixir.Tracker.Tapd.{BugAIModelLevel, BugAIWorkflow, Normalizer}
+  alias MaestroTapdGitlabLite.Tracker.PolicyConfig
+  alias SymphonyElixir.Tracker.Tapd.Normalizer
 
   test "normalizes the TAPD AI model level and defaults missing or invalid values to medium" do
     tracker = %{
@@ -26,7 +27,7 @@ defmodule SymphonyElixir.TapdNormalizerTest do
     default_issue = Normalizer.normalize_bug(Map.delete(bug, "custom_field_7"), tracker)
     invalid_issue = Normalizer.normalize_bug(Map.put(bug, "custom_field_7", "turbo"), tracker)
 
-    assert BugAIModelLevel.level(bug, tracker) == "high"
+    assert PolicyConfig.model_level(bug, tracker) == "high"
     assert issue.custom_fields["AI模型等级"] == "high"
     assert issue.custom_fields["ai_model_level"] == "high"
     assert default_issue.custom_fields["ai_model_level"] == "medium"
@@ -52,8 +53,8 @@ defmodule SymphonyElixir.TapdNormalizerTest do
 
     issue = Normalizer.normalize_bug(bug, tracker)
 
-    assert BugAIWorkflow.exception?(bug, tracker)
-    assert BugAIWorkflow.exception_value(tracker) == "AI异常"
+    assert PolicyConfig.field_value(bug, PolicyConfig.workflow_field(tracker)) == "AI异常"
+    assert PolicyConfig.exception_value(tracker) == "AI异常"
     refute issue.assigned_to_worker
     assert issue.custom_fields["AI特殊工作流"] == "AI异常"
   end

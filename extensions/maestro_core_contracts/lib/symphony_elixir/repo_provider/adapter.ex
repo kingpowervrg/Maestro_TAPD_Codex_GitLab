@@ -29,10 +29,12 @@ defmodule SymphonyElixir.RepoProvider.Adapter do
     * `supported_config_options/0` — shared canonical options accepted by
       the adapter (for example required PR labels or change-proposal body
       generators)
+    * `dynamic_tool_enabled?/2` — optional configuration gate for a dynamic
+      tool backed by an otherwise declared provider capability
 
   ## Implementing a New Adapter
 
-      defmodule MyApp.RepoProvider.GitLab.Adapter do
+      defmodule MyApp.RepoProvider.Forge.Adapter do
         @behaviour SymphonyElixir.RepoProvider.Adapter
 
         def kind, do: "gitlab"
@@ -45,7 +47,7 @@ defmodule SymphonyElixir.RepoProvider.Adapter do
   Register at runtime:
 
       config :symphony_elixir, :repo_provider_adapters, %{
-        "gitlab" => MyApp.RepoProvider.GitLab.Adapter
+        "forge" => MyApp.RepoProvider.Forge.Adapter
       }
   """
 
@@ -105,6 +107,7 @@ defmodule SymphonyElixir.RepoProvider.Adapter do
   @callback validate_config(Config.t()) :: :ok | {:error, Error.t() | term()}
   @callback capabilities() :: [capability()]
   @callback supported_config_options() :: [atom()]
+  @callback dynamic_tool_enabled?(Config.t(), String.t()) :: boolean()
 
   # ── PR operations ────────────────────────────────────────────────
 
@@ -147,6 +150,7 @@ defmodule SymphonyElixir.RepoProvider.Adapter do
 
   @optional_callbacks [
     supported_config_options: 0,
+    dynamic_tool_enabled?: 2,
     auth_status: 2,
     pr_view: 2,
     pr_create: 2,

@@ -24,6 +24,8 @@ tracker:
         resolved_value: AI已解决
         exception_value: AI异常
         active_states: [new, reopened]
+      bug_ai_model_level:
+        field: $TAPD_BUG_AI_MODEL_LEVEL_FIELD
   lifecycle:
     active_states:
       - status_4

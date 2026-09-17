@@ -2,70 +2,11 @@
 set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-elixir_dir="$(cd -- "${script_dir}/.." && pwd)"
-local_config_file="${elixir_dir}/.env.gitlab.local"
-default_env_file="/home/admin2/workspace_other/Env/symphony/tapd-gitlab.env"
+extension_script="${script_dir}/../../extensions/maestro_tapd_gitlab_lite/bin/start"
 
-if [[ -z "${SYMPHONY_TAPD_GITLAB_ENV_FILE:-}" ]] && [[ -f "${local_config_file}" ]]; then
-  SYMPHONY_TAPD_GITLAB_ENV_FILE="$({
-    set -a
-    # shellcheck disable=SC1090
-    source "${local_config_file}"
-    printf '%s' "${SYMPHONY_TAPD_GITLAB_ENV_FILE:-}"
-  })"
-fi
-
-env_file="${SYMPHONY_TAPD_GITLAB_ENV_FILE:-${default_env_file}}"
-
-if [[ ! -f "${env_file}" ]]; then
-  printf 'Missing TAPD/GitLab environment file: %s\n' "${env_file}" >&2
+if [[ ! -x "${extension_script}" ]]; then
+  printf 'TAPD/GitLab Lite extension start script is unavailable: %s\n' "${extension_script}" >&2
   exit 1
 fi
 
-if [[ "${env_file}" == "${default_env_file}" ]] && [[ "$(stat -c '%a' "${env_file}")" != "600" ]]; then
-  printf 'Refusing to load %s: expected mode 600.\n' "${env_file}" >&2
-  exit 1
-fi
-
-set -a
-# shellcheck disable=SC1090
-source "${env_file}"
-set +a
-
-required_variables=(
-  SYMPHONY_WORKSPACE_ROOT
-  TAPD_API_USER
-  TAPD_API_PASSWORD
-  TAPD_WORKSPACE_ID
-  TAPD_ASSIGNEE
-  SOURCE_REPO_URL
-  SOURCE_REPO_BASE_BRANCH
-  SOURCE_REPO_BRANCH_WORK_PREFIX
-  GITLAB_API_TOKEN
-)
-
-for variable_name in "${required_variables[@]}"; do
-  if [[ -z "${!variable_name:-}" ]]; then
-    printf 'Missing required variable in %s: %s\n' "${env_file}" "${variable_name}" >&2
-    exit 1
-  fi
-done
-
-if ! command -v mise >/dev/null 2>&1; then
-  printf '%s\n' 'mise is required but was not found in PATH.' >&2
-  exit 127
-fi
-
-dashboard_host="${SYMPHONY_DASHBOARD_HOST:-127.0.0.1}"
-dashboard_port="${SYMPHONY_DASHBOARD_PORT:-4000}"
-
-printf 'Starting Maestro with tapd/git/codex.\n'
-printf 'Dashboard: http://%s:%s/\n' "${dashboard_host}" "${dashboard_port}"
-
-cd "${elixir_dir}"
-exec mise exec -- ./bin/symphony \
-  --i-understand-that-this-will-be-running-without-the-usual-guardrails \
-  --template tapd/git/codex \
-  --host "${dashboard_host}" \
-  --port "${dashboard_port}" \
-  "$@"
+exec "${extension_script}" "$@"

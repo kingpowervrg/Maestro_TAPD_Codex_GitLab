@@ -1,7 +1,5 @@
-defmodule SymphonyElixir.RepoObjectCacheHelperTest do
+defmodule MaestroTapdGitlabLite.RepoBootstrap.ObjectCacheTest do
   use ExUnit.Case, async: true
-
-  alias SymphonyElixir.Platform.CommandEnv
 
   @helper Path.expand("priv/workspace_automation/bin/repo-object-cache", File.cwd!())
 
@@ -36,7 +34,9 @@ defmodule SymphonyElixir.RepoObjectCacheHelperTest do
 
     assert [cache_path] = Enum.uniq(cache_paths)
     assert File.dir?(cache_path)
-    assert String.trim(run!("git", ["-C", cache_path, "rev-parse", "--is-bare-repository"])) == "true"
+
+    assert String.trim(run!("git", ["-C", cache_path, "rev-parse", "--is-bare-repository"])) ==
+             "true"
 
     run!("git", [
       "clone",
@@ -51,7 +51,9 @@ defmodule SymphonyElixir.RepoObjectCacheHelperTest do
       checkout
     ])
 
-    alternates = checkout |> Path.join(".git/objects/info/alternates") |> File.read!() |> String.trim()
+    alternates =
+      checkout |> Path.join(".git/objects/info/alternates") |> File.read!() |> String.trim()
+
     assert alternates == Path.join(cache_path, "objects")
 
     File.write!(Path.join(source, "README.md"), "cached objects\nupdated\n")
@@ -66,14 +68,14 @@ defmodule SymphonyElixir.RepoObjectCacheHelperTest do
   end
 
   defp prepare_cache(remote_url, cache_root) do
-    case CommandEnv.system_cmd(@helper, ["prepare", remote_url, cache_root], stderr_to_stdout: true) do
+    case System.cmd(@helper, ["prepare", remote_url, cache_root], stderr_to_stdout: true) do
       {output, 0} -> output |> String.split("\n", trim: true) |> List.last()
       {output, status} -> flunk("cache prepare failed with #{status}: #{output}")
     end
   end
 
   defp run!(command, args) do
-    case CommandEnv.system_cmd(command, args, stderr_to_stdout: true) do
+    case System.cmd(command, args, stderr_to_stdout: true) do
       {output, 0} -> output
       {output, status} -> flunk("#{command} failed with #{status}: #{output}")
     end

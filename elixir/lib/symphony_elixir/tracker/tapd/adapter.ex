@@ -15,10 +15,11 @@ defmodule SymphonyElixir.Tracker.Tapd.Adapter do
   alias SymphonyElixir.Tracker.Capabilities, as: TrackerCapabilities
   alias SymphonyElixir.Tracker.Config, as: TrackerConfig
   alias SymphonyElixir.Tracker.Error
+  alias SymphonyElixir.Tracker.IssuePolicy.Runtime, as: IssuePolicyRuntime
   alias SymphonyElixir.Tracker.Kinds
   alias SymphonyElixir.Tracker.ProjectRef
   alias SymphonyElixir.Tracker.StatePrecondition
-  alias SymphonyElixir.Tracker.Tapd.{BugAIWorkflow, Client, ConfigValidator, ToolExecutor, WorkspacePreparation}
+  alias SymphonyElixir.Tracker.Tapd.{Client, ConfigValidator, ToolExecutor, WorkspacePreparation}
   alias SymphonyElixir.Tracker.Tapd.Client.Paths
 
   @provider_kind Kinds.tapd()
@@ -67,10 +68,7 @@ defmodule SymphonyElixir.Tracker.Tapd.Adapter do
         provider: %{
           assignee: "TAPD_ASSIGNEE",
           platform: %{
-            comment_author: "TAPD_COMMENT_AUTHOR",
-            bug_ai_model_level: %{
-              field: "TAPD_BUG_AI_MODEL_LEVEL_FIELD"
-            }
+            comment_author: "TAPD_COMMENT_AUTHOR"
           }
         }
       },
@@ -178,19 +176,16 @@ defmodule SymphonyElixir.Tracker.Tapd.Adapter do
   @spec mark_ai_workflow_exception(TrackerConfig.t(), String.t(), keyword()) :: :ok | {:error, term()}
   def mark_ai_workflow_exception(tracker, issue_id, opts \\ [])
       when is_map(tracker) and is_binary(issue_id) and is_list(opts) do
-    case BugAIWorkflow.field(tracker) do
-      field when is_binary(field) ->
-        with {:ok, issue} <- fetch_ai_workflow_bug(tracker, issue_id, opts),
-             {:ok, action} <- ai_workflow_exception_action(issue, tracker) do
-          commit_ai_workflow_exception(action, tracker, issue, field, opts)
-        end
-
-      _field ->
-        {:error, :bug_ai_workflow_not_configured}
+    with {:ok, issue} <- fetch_policy_issue(tracker, issue_id, opts) do
+      IssuePolicyRuntime.handle_failure(tracker, %{
+        issue: issue,
+        fetch_issue: fn -> fetch_policy_issue(tracker, issue_id, opts) end,
+        update_fields: fn fields -> update_policy_fields(tracker, issue.id, fields, opts) end
+      })
     end
   end
 
-  defp fetch_ai_workflow_bug(tracker, issue_id, opts) do
+  defp fetch_policy_issue(tracker, issue_id, opts) do
     normalized_issue_id = normalize_issue_id(tracker, issue_id)
 
     case Client.fetch_bugs_by_ids([normalized_issue_id],
@@ -201,49 +196,15 @@ defmodule SymphonyElixir.Tracker.Tapd.Adapter do
         {:ok, issue}
 
       {:ok, []} ->
-        {:error, {:not_found, "TAPD Bug #{normalized_issue_id} was not found before updating its AI workflow."}}
+        {:error, {:not_found, "TAPD issue #{normalized_issue_id} was not found before applying its failure policy."}}
 
       {:error, reason} ->
         {:error, reason}
     end
   end
 
-  defp ai_workflow_exception_action(%Issue{entity_type: "bug"} = issue, tracker) do
-    current_value = Map.get(issue.custom_fields, "ai_special_workflow")
-    accepted_value = BugAIWorkflow.accepted_value(tracker)
-    exception_value = BugAIWorkflow.exception_value(tracker)
-    current_state = issue.state |> to_string() |> String.trim() |> String.downcase()
-    active_states = Enum.map(BugAIWorkflow.active_states(tracker), &String.downcase/1)
-
-    cond do
-      current_value == exception_value ->
-        {:ok, :already_exceptional}
-
-      current_value != accepted_value ->
-        {:error,
-         {:state_conflict,
-          %{
-            "message" => "TAPD Bug is no longer accepted for AI processing; refusing to overwrite its AI workflow.",
-            "expected" => accepted_value,
-            "actual" => current_value
-          }}}
-
-      current_state not in active_states ->
-        {:error, {:state_conflict, "TAPD Bug is no longer in an AI-active state."}}
-
-      true ->
-        {:ok, :write_exception}
-    end
-  end
-
-  defp ai_workflow_exception_action(%Issue{}, _tracker) do
-    {:error, {:invalid_arguments, "AI workflow exception updates are supported only for TAPD Bugs."}}
-  end
-
-  defp commit_ai_workflow_exception(:already_exceptional, _tracker, _issue, _field, _opts), do: :ok
-
-  defp commit_ai_workflow_exception(:write_exception, tracker, %Issue{} = issue, field, opts) do
-    params = %{"id" => issue.id, field => BugAIWorkflow.exception_value(tracker)}
+  defp update_policy_fields(tracker, issue_id, fields, opts) when is_map(fields) do
+    params = Map.put(fields, "id", issue_id)
     request_fun = Keyword.get(opts, :request_fun, &Client.Request.default_request/1)
 
     with {:ok, response} <-
@@ -251,27 +212,8 @@ defmodule SymphonyElixir.Tracker.Tapd.Adapter do
              tracker: tracker,
              request_fun: request_fun
            ),
-         {:ok, _data} <- Client.Response.decode_success_envelope(Paths.bugs(), response),
-         {:ok, updated_issue} <- fetch_ai_workflow_bug(tracker, issue.id, opts),
-         :ok <- verify_ai_workflow_exception(updated_issue, tracker) do
+         {:ok, _data} <- Client.Response.decode_success_envelope(Paths.bugs(), response) do
       :ok
-    end
-  end
-
-  defp verify_ai_workflow_exception(%Issue{entity_type: "bug"} = issue, tracker) do
-    expected = BugAIWorkflow.exception_value(tracker)
-    actual = Map.get(issue.custom_fields, "ai_special_workflow")
-
-    if actual == expected do
-      :ok
-    else
-      {:error,
-       {:state_conflict,
-        %{
-          "message" => "TAPD Bug AI workflow read-back did not confirm the exception value.",
-          "expected" => expected,
-          "actual" => actual
-        }}}
     end
   end
 

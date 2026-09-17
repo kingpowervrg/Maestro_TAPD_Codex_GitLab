@@ -60,10 +60,105 @@ defmodule SymphonyElixir.Workspace.AutomationPack do
   def bundled_source_dir do
     case application_priv_source_dir() do
       {:ok, bundled_dir} ->
-        {:ok, bundled_dir}
+        compose_sources(bundled_dir)
 
       {:error, _reason} ->
         extract_bundled_source_dir()
+    end
+  end
+
+  defp compose_sources(bundled_dir) do
+    case configured_source_dirs() do
+      [] -> {:ok, bundled_dir}
+      overlay_dirs -> build_composite_source([bundled_dir | overlay_dirs])
+    end
+  end
+
+  defp configured_source_dirs do
+    :symphony_elixir
+    |> Application.get_env(:workspace_automation_sources, [])
+    |> List.wrap()
+    |> Enum.map(&source_dir!/1)
+  end
+
+  defp source_dir!(module) when is_atom(module) do
+    unless Code.ensure_loaded?(module) and function_exported?(module, :source_dir, 1) do
+      raise ArgumentError, "invalid workspace automation source: #{inspect(module)}"
+    end
+
+    case module.source_dir([]) do
+      path when is_binary(path) and path != "" -> path
+      value -> raise ArgumentError, "workspace automation source must return a path, got: #{inspect(value)}"
+    end
+  end
+
+  defp source_dir!(value),
+    do: raise(ArgumentError, "invalid workspace automation source: #{inspect(value)}")
+
+  defp build_composite_source(source_dirs) do
+    with :ok <- validate_composite_sources(source_dirs) do
+      cache_key = source_dirs |> Enum.map(&source_fingerprint/1) |> :erlang.phash2() |> Integer.to_string(36)
+      cache_parent = Path.join([System.tmp_dir!(), @cache_rootname, "composite-#{cache_key}"])
+      composite_dir = Path.join(cache_parent, @bundle_dirname)
+
+      if File.dir?(composite_dir) do
+        {:ok, composite_dir}
+      else
+        assemble_composite_source(source_dirs, cache_parent, composite_dir)
+      end
+    end
+  end
+
+  defp validate_composite_sources(source_dirs) do
+    case Enum.find(source_dirs, &(not File.dir?(&1))) do
+      nil -> :ok
+      path -> {:error, {:bundled_automation_pack_missing, path}}
+    end
+  end
+
+  defp source_fingerprint(path) do
+    case File.stat(path, time: :posix) do
+      {:ok, stat} -> {Path.expand(path), stat.mtime, stat.size}
+      {:error, reason} -> {Path.expand(path), reason}
+    end
+  end
+
+  defp assemble_composite_source(source_dirs, cache_parent, composite_dir) do
+    staging_parent = cache_parent <> ".#{System.unique_integer([:positive, :monotonic])}"
+    staging_dir = Path.join(staging_parent, @bundle_dirname)
+
+    try do
+      File.mkdir_p!(staging_dir)
+      Enum.each(source_dirs, &copy_overlay!(&1, staging_dir))
+      File.mkdir_p!(Path.dirname(cache_parent))
+
+      case File.rename(staging_parent, cache_parent) do
+        :ok -> :ok
+        {:error, :eexist} -> :ok
+        {:error, reason} -> raise File.Error, reason: reason, action: "rename", path: cache_parent
+      end
+
+      {:ok, composite_dir}
+    after
+      File.rm_rf(staging_parent)
+    end
+  rescue
+    error -> {:error, {:workspace_automation_source_composition_failed, Exception.message(error)}}
+  end
+
+  defp copy_overlay!(source_dir, destination_dir) do
+    source_dir
+    |> File.ls!()
+    |> Enum.each(fn entry -> copy_overlay_entry!(Path.join(source_dir, entry), Path.join(destination_dir, entry)) end)
+  end
+
+  defp copy_overlay_entry!(source, destination) do
+    if File.dir?(source) do
+      File.mkdir_p!(destination)
+      copy_overlay!(source, destination)
+    else
+      File.mkdir_p!(Path.dirname(destination))
+      File.cp!(source, destination)
     end
   end
 

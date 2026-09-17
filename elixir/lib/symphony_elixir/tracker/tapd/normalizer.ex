@@ -4,7 +4,8 @@ defmodule SymphonyElixir.Tracker.Tapd.Normalizer do
   """
 
   alias SymphonyElixir.Issue
-  alias SymphonyElixir.Tracker.Tapd.{BugAIModelLevel, BugAIWorkflow, StoryBranch}
+  alias SymphonyElixir.Tracker.IssuePolicy.Runtime, as: IssuePolicyRuntime
+  alias SymphonyElixir.Tracker.Tapd.StoryBranch
   alias SymphonyElixir.Workflow.Lifecycle, as: WorkflowLifecycle
 
   @type assignee_filter ::
@@ -62,10 +63,8 @@ defmodule SymphonyElixir.Tracker.Tapd.Normalizer do
     workflow = Keyword.get(opts, :workflow, %{})
     assignee_filter = Keyword.get(opts, :assignee_filter)
     assignees = bug_assignee_values(bug)
-    ai_workflow_value = BugAIWorkflow.value(bug, tracker)
-    ai_model_level = BugAIModelLevel.level(bug, tracker)
 
-    %Issue{
+    issue = %Issue{
       id: bug_id,
       identifier: story_identifier(bug_id),
       title: string_field(bug, "title") || string_field(bug, "name"),
@@ -80,23 +79,32 @@ defmodule SymphonyElixir.Tracker.Tapd.Normalizer do
       assignee_id: assignee_id(assignees),
       blocked_by: [],
       labels: extract_labels(bug),
-      custom_fields: %{
-        "AI特殊工作流" => ai_workflow_value,
-        "ai_special_workflow" => ai_workflow_value,
-        "AI模型等级" => ai_model_level,
-        "ai_model_level" => ai_model_level
-      },
+      custom_fields: raw_custom_fields(bug),
       workflow: workflow,
-      assigned_to_worker:
-        assigned_to_worker?(assignees, assignee_filter) and
-          BugAIWorkflow.accepted?(bug, tracker) and
-          not BugAIWorkflow.exception?(bug, tracker),
+      assigned_to_worker: assigned_to_worker?(assignees, assignee_filter),
       created_at: parse_datetime(string_field(bug, "created")),
       updated_at: parse_datetime(string_field(bug, "modified") || string_field(bug, "updated"))
     }
+
+    case IssuePolicyRuntime.enrich_issue(issue, tracker, %{raw_issue: bug}) do
+      {:ok, enriched} ->
+        case IssuePolicyRuntime.evaluate_dispatch(enriched, tracker) do
+          :allow -> enriched
+          {:deny, _reason} -> %{enriched | assigned_to_worker: false}
+        end
+
+      {:error, _reason} ->
+        %{issue | assigned_to_worker: false}
+    end
   end
 
   def normalize_bug(_bug, _tracker, _opts), do: nil
+
+  defp raw_custom_fields(issue) do
+    issue
+    |> Enum.filter(fn {key, _value} -> key |> to_string() |> String.starts_with?("custom_field_") end)
+    |> Map.new(fn {key, value} -> {to_string(key), value} end)
+  end
 
   @doc false
   @spec normalize_assignee_match_value(term()) :: String.t() | nil

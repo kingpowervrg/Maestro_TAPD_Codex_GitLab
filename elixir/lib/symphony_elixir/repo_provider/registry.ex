@@ -12,7 +12,7 @@ defmodule SymphonyElixir.RepoProvider.Registry do
   replace adapter mappings:
 
       config :symphony_elixir, :repo_provider_adapters, %{
-        "gitlab" => MyApp.RepoProvider.GitLab.Adapter
+        "forge" => MyApp.RepoProvider.Forge.Adapter
       }
 
   Overrides are merged on top of the built-in defaults, so existing

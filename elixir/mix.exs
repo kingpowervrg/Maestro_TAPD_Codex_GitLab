@@ -124,6 +124,8 @@ defmodule SymphonyElixir.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
+      {:maestro_core_contracts, path: "../extensions/maestro_core_contracts", runtime: true},
+      {:maestro_tapd_gitlab_lite, path: "../extensions/maestro_tapd_gitlab_lite", runtime: true},
       {:bandit, "~> 1.8"},
       {:floki, ">= 0.30.0"},
       {:lazy_html, ">= 0.1.0", only: :test},
@@ -157,7 +159,7 @@ defmodule SymphonyElixir.MixProject do
   defp escript do
     [
       app: nil,
-      include_priv_for: [:symphony_elixir, :exqlite],
+      include_priv_for: [:symphony_elixir, :maestro_tapd_gitlab_lite, :exqlite],
       main_module: SymphonyElixir.CLI,
       emu_args: "+B i",
       name: "symphony",

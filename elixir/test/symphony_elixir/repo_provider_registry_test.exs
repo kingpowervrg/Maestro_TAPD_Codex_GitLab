@@ -1,6 +1,18 @@
 defmodule SymphonyElixir.RepoProviderRegistryTest do
   use SymphonyElixir.TestSupport
 
+  setup do
+    previous_adapters = Application.get_env(:symphony_elixir, :repo_provider_adapters)
+
+    on_exit(fn ->
+      if is_nil(previous_adapters) do
+        Application.delete_env(:symphony_elixir, :repo_provider_adapters)
+      else
+        Application.put_env(:symphony_elixir, :repo_provider_adapters, previous_adapters)
+      end
+    end)
+  end
+
   alias SymphonyElixir.RepoProvider
   alias SymphonyElixir.RepoProvider.Error
 

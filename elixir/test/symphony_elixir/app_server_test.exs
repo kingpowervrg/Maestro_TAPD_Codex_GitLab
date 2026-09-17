@@ -41,7 +41,7 @@ defmodule SymphonyElixir.AgentProvider.Codex.AppServerTest do
 
   test "Codex reasoning effort accepts TAPD model levels and defaults to medium" do
     for level <- ~w(low medium high xhigh) do
-      issue = %Issue{custom_fields: %{"ai_model_level" => level}}
+      issue = %Issue{agent_options: %{reasoning_effort: level}}
 
       assert SymphonyElixir.AgentProvider.Codex.AppServer.SessionProtocol.reasoning_effort(issue) ==
                level
@@ -51,7 +51,7 @@ defmodule SymphonyElixir.AgentProvider.Codex.AppServerTest do
              "medium"
 
     assert SymphonyElixir.AgentProvider.Codex.AppServer.SessionProtocol.reasoning_effort(%Issue{
-             custom_fields: %{"ai_model_level" => "unsupported"}
+             agent_options: %{reasoning_effort: "unsupported"}
            }) == "medium"
   end
 
@@ -223,7 +223,7 @@ defmodule SymphonyElixir.AgentProvider.Codex.AppServerTest do
         state: "In Progress",
         url: "https://example.org/issues/MT-1001",
         labels: ["backend"],
-        custom_fields: %{"ai_model_level" => "high"}
+        agent_options: %{reasoning_effort: "high"}
       }
 
       policy_cases = [

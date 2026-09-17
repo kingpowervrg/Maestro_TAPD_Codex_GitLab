@@ -61,6 +61,27 @@ defmodule SymphonyElixir.Workflow.Extension.Contributions do
     end
   end
 
+  @spec required_dynamic_tool_capabilities(map(), keyword()) :: [String.t()]
+  def required_dynamic_tool_capabilities(settings, opts \\ [])
+      when is_map(settings) and is_list(opts) do
+    case extension_modules(opts) do
+      {:ok, modules} ->
+        Enum.flat_map(modules, fn module ->
+          if function_exported?(module, :required_dynamic_tool_capabilities, 1) do
+            case safe_apply(module, :required_dynamic_tool_capabilities, [settings]) do
+              {:ok, values} when is_list(values) -> Enum.filter(values, &is_binary/1)
+              _result -> []
+            end
+          else
+            []
+          end
+        end)
+
+      {:error, _reason} ->
+        []
+    end
+  end
+
   defp extension_modules(opts) do
     case Registry.entries(registry_opts(opts)) do
       {:ok, entries} -> {:ok, Enum.map(entries, & &1.module)}

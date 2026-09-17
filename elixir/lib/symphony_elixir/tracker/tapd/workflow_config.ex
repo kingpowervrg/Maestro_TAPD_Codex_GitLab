@@ -2,7 +2,7 @@ defmodule SymphonyElixir.Tracker.Tapd.WorkflowConfig do
   @moduledoc false
 
   alias SymphonyElixir.Tracker.Config, as: TrackerConfig
-  alias SymphonyElixir.Tracker.Tapd.BugAIWorkflow
+  alias SymphonyElixir.Tracker.IssuePolicy.Runtime, as: IssuePolicyRuntime
   alias SymphonyElixir.Workflow.Effective
   alias SymphonyElixir.Workflow.ExecutionProfileRegistry
   alias SymphonyElixir.Workflow.Lifecycle, as: WorkflowLifecycle
@@ -185,7 +185,11 @@ defmodule SymphonyElixir.Tracker.Tapd.WorkflowConfig do
 
   @spec workflow_for_bug(map()) :: workflow()
   def workflow_for_bug(tracker) when is_map(tracker) do
-    active_states = BugAIWorkflow.active_states(tracker)
+    active_states =
+      case IssuePolicyRuntime.candidate_scope("bug", tracker) do
+        %{states: states} when is_list(states) -> states
+        _scope -> []
+      end
 
     state_phase_map = Map.new(active_states, &{&1, "in_progress"})
 

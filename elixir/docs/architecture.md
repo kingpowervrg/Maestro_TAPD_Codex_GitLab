@@ -1,5 +1,12 @@
 # Architecture Conventions
 
+TAPD + GitLab Lite is packaged as the independent sibling OTP application
+`extensions/maestro_tapd_gitlab_lite`. Core owns only the provider-neutral
+`Tracker.IssuePolicy` lifecycle contract, workflow contribution registries,
+repo-provider capability dispatch, and workspace automation-source overlay.
+Core must not reference the extension namespace or company/GitLab literals;
+application configuration is the sole assembly seam.
+
 This guide defines the current module-placement and responsibility boundaries for
 `elixir/lib/symphony_elixir/`.
 
