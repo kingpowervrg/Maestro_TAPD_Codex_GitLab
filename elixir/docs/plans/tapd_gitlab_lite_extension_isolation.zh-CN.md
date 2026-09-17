@@ -78,14 +78,33 @@ elixir/test/symphony_elixir/repo_provider/github_test.exs
    - start/restart/stop 脚本。
    - 环境变量、部署文档、secret scan 和验证记录。
 
+### 2.4 设计驱动因素与资产寿命
+
+本次分离不是为了长期维护一套与上游竞争的 GitLab Provider，而是由以下三个现实需求驱动：
+
+1. **上游当前尚未实现 GitLab 支持**：现阶段必须自研 GitLab Lite，才能让 TAPD 工作项在私有 GitLab 大仓库中完成代码交付。
+2. **公司 TAPD 工作流具有长期差异**：不同公司的 Bug/Story 字段、状态和值域不同，需要通过附加字段实现 AI opt-in、完成和异常闭环，同时不得破坏历史工作项及原有工作流。
+3. **未来优先采用上游 GitLab 实现**：上游提供正式 GitLab Provider 后，应以它为主，只保留公司 TAPD Policy 和上游未覆盖的少量差异。
+
+因此必须把当前功能拆成不同寿命的三类资产：
+
+| 资产 | 定位 | 上游支持 GitLab 后 |
+| --- | --- | --- |
+| 公司 TAPD AI Policy | 长期业务扩展 | 继续保留，与 Repo Provider 解耦 |
+| GitLab Lite Backend/Search | 临时兼容实现 | 优先替换或删除，采用上游 Provider |
+| Object cache/大仓库策略 | 公司运维优化 | 复用上游 hook；如上游等价覆盖则删除 |
+
+核心原则：**长期维护公司 TAPD AI Policy，短期维护 GitLab Lite Backend；未来替换 Backend 时，Policy 不动。**
+
 ## 3. Goals
 
 1. **隔离业务实现**：至少 90% 的 TAPD + GitLab Lite 专属代码、模板、测试、脚本和文档位于一个独立扩展目录。
 2. **保护原始功能**：禁用扩展后，原有 TAPD + GitHub 的配置、工具集合、生命周期和测试行为与上游一致。
 3. **缩小升级冲突面**：Maestro 核心只保留通用扩展接口和一个装配入口，业务字段名、GitLab API 细节及 Lite 生命周期不得散落在核心模块中。
 4. **保持行为兼容**：迁移前后 `tapd/git/codex` 的候选筛选、远程搜索、稀疏展开、commit、verified push、workpad、`AI已解决` 和 `AI异常` 语义不变。
-5. **建立可重复升级流程**：后续上游升级通过 Git remote、merge 分支和双模式测试完成，不再依赖目录复制或人工逐文件比对。
+5. **建立可重复升级流程**：后续上游升级通过 Git remote、merge 分支和三模式测试完成，不再依赖目录复制或人工逐文件比对。
 6. **约束后续 Agent 开发**：新增项目级 Agent Rule，向后续 Agent 明确 Core/Extension 边界，并要求 TAPD + GitLab Lite 的新增实现默认进入独立扩展目录。
+7. **支持未来替换 Backend**：上游正式 GitLab Provider 到来时，主要通过注册和配置切换完成迁移，公司 TAPD Policy 不重写。
 
 ## 4. Non-Goals
 
@@ -115,15 +134,21 @@ extensions/
     │       ├── registry_source.ex
     │       ├── host_adapters/
     │       ├── repo/
-    │       │   ├── git_adapter.ex
+    │       │   ├── backend.ex
+    │       │   ├── gitlab_lite_backend.ex
     │       │   ├── gitlab_code_search.ex
     │       │   └── remote_search_tool.ex
+    │       ├── repo_bootstrap/
+    │       │   ├── policy.ex
+    │       │   ├── object_cache.ex
+    │       │   └── clone_plan.ex
     │       ├── tracker/
-    │       │   ├── tapd_adapter.ex
+    │       │   ├── issue_policy.ex
     │       │   ├── bug_ai_workflow.ex
     │       │   ├── bug_ai_model_level.ex
     │       │   ├── candidate_policy.ex
-    │       │   └── completion_tool.ex
+    │       │   ├── completion_policy.ex
+    │       │   └── failure_policy.ex
     │       └── workflow/
     │           ├── capability_gate.ex
     │           ├── terminal_outcome.ex
@@ -153,10 +178,10 @@ Maestro Core contracts/facades
              │
 MaestroTapdGitlabLite extension
              │
-             ├── TAPD policy
-             ├── GitLab read-only search
-             ├── Git-only workflow
-             └── deployment assets
+             ├── Company TAPD IssuePolicy     # 长期保留
+             ├── GitLab Lite Backend/Search   # 临时实现
+             ├── Repository Bootstrap Policy  # 按需保留
+             └── workflow/deployment assets
 ```
 
 约束：
@@ -165,6 +190,8 @@ MaestroTapdGitlabLite extension
 - 扩展只能通过稳定 facade、behaviour、registry source 或显式 Host Adapter 调用 Core。
 - 业务规则模块优先接收依赖注入，不直接读取 Orchestrator 内部 state。
 - 模板和 workspace automation 从扩展自己的 OTP `priv` 目录加载。
+- TAPD Policy 只能依赖 Repo facade/capability，不能引用 GitLab Lite 具体模块。
+- GitLab Lite 和未来上游 GitLab Provider 必须能在不修改 TAPD Policy 的情况下互换。
 
 ### 5.3 Core 保留内容
 
@@ -176,6 +203,8 @@ MaestroTapdGitlabLite extension
 - 通用 Codex model/effort 传递能力。
 - 通用最大重试次数和终止结果协议。
 - Extension registry、template source、dynamic tool source 和 lifecycle callback 合约。
+- 一个统一的平台中性 `IssuePolicy` contract，用于 enrichment、派发决策、完成和失败处理。
+- 必要时提供平台中性的 repository bootstrap contract；具体 object-cache 策略不进入 Core。
 
 这些能力必须使用平台中性命名，不能引用 `GitLab`、`AI特殊工作流`、`tapd_git_codex` 或目标仓库信息。
 
@@ -190,7 +219,86 @@ MaestroTapdGitlabLite extension
 - object cache 的产品配置和启动脚本。
 - GitLab Lite 专属测试、运维文档和灰度记录。
 
-### 5.5 Agent Rule
+### 5.5 三项工程决策
+
+#### 5.5.1 TAPD：使用统一 IssuePolicy，不包装完整 Adapter
+
+Core 增加一个平台中性的 `IssuePolicy` 扩展接口，公司 TAPD AI 工作流作为独立 Policy 实现。Policy 至少覆盖以下四个生命周期：
+
+```text
+enrich_issue      读取并规范化扩展字段
+evaluate_dispatch 判断工作项是否允许派发
+complete          成功后的字段回写与回读确认
+handle_failure    阻塞或异常后的安全收尾
+```
+
+Core 负责固定调用时机、统一结果和错误处理；扩展负责 `AI特殊工作流`、`AI模型等级`、Confusions、返工和公司字段值语义。没有注册 Policy 时，原 TAPD Adapter 行为必须保持不变。
+
+不包装完整 TAPD Adapter，避免复制全部 Adapter 接口、依赖内部实现，以及在上游 TAPD Adapter 增加方法时持续维护机械转发代码。
+
+公司字段必须配置化，不能把 TAPD `custom_field_*` 编号写死在代码中：
+
+```yaml
+company_tapd_ai:
+  enabled: true
+  bug:
+    active_states: [new, reopened]
+    ai_workflow:
+      field: $TAPD_BUG_AI_WORKFLOW_FIELD
+      accepted_value: 接受/处理
+      resolved_value: AI已解决
+      exception_value: AI异常
+    model_level:
+      field: $TAPD_BUG_AI_MODEL_LEVEL_FIELD
+  story:
+    # Story 使用独立配置，不默认继承 Bug 字段和值域。
+```
+
+缺少扩展字段、字段不是接受值或未启用公司 Policy 的历史工作项必须保持原行为，不得被新 AI 流程派发或改写。
+
+#### 5.5.2 交付：第一阶段使用同仓 path dependency
+
+第一阶段采用同仓独立 Mix project：
+
+```elixir
+{:maestro_tapd_gitlab_lite,
+ path: "../extensions/maestro_tapd_gitlab_lite"}
+```
+
+这只是代码来源和交付方式，不影响运行时 contract。扩展从第一天起必须具备独立 OTP application、namespace、`mix.exs`、`priv`、测试和版本；不得因为使用 path dependency 而直接调用 Core 私有模块。Contract 稳定后可以切换为 Git dependency，业务代码不应随之修改。
+
+#### 5.5.3 Object cache：实现与策略先留在扩展
+
+Object cache 当前由约 146 GB 的特定仓库需求驱动，尚无证据表明 GitHub/CNB 也需要完全相同的实现。因此第一阶段把 object-cache helper、配置、锁、cache key、clone 参数和清理策略留在扩展。
+
+Core 只在迁移确有需要时提供平台中性的 repository bootstrap contract 或安全 Git 原语，并且不得读取 `SYMPHONY_GIT_OBJECT_CACHE_ROOT`。出现第二个 Provider 使用者，或者上游提供等价机制后，再决定复用、上移或删除；不提前把具体 helper 并入 Core。
+
+### 5.6 上游 GitLab 替换策略
+
+GitLab Lite 必须实现为可替换 Backend，而不是公司 TAPD Policy 的组成部分：
+
+```text
+Company TAPD IssuePolicy
+           │
+           ▼
+Repo facade/capabilities
+           │
+           ├── 当前：GitLab Lite Backend
+           └── 未来：Upstream GitLab Provider
+```
+
+上游 GitLab Provider 到来后的迁移顺序：
+
+1. 建立 clone/fetch、checkout、search、commit/push、MR、review、pipeline 和 merge 能力矩阵。
+2. 先接入上游 Provider，保持公司 TAPD Policy 和字段语义不变。
+3. 用既有成功、异常、Story 和历史工作项场景验证上游 Backend。
+4. 删除已被上游覆盖的 Lite 实现。
+5. 上游未覆盖的大仓库策略通过其公开 hook 接入；若上游已经等价覆盖，则删除本地实现。
+6. 保留一个灰度周期的兼容开关，然后删除旧 Backend 和旧配置。
+
+禁止在同一个提交中同时接入上游 Provider、修改 TAPD 字段语义、修改 object cache 和调整工作项状态流转。
+
+### 5.7 Agent Rule
 
 新建一份覆盖 TAPD + GitLab Lite 开发的 `AGENTS.md`。推荐将详细规则放在：
 
@@ -262,10 +370,11 @@ Agent Rule 应提供一个提交前检查清单：
 
 - [ ] Repo Provider Adapter 继续支持通过配置注册。
 - [ ] Dynamic Tool 支持由外部 OTP application 贡献工具定义和执行器。
-- [ ] Tracker 支持外部 issue enrichment、候选过滤和完成策略，或提供等价的组合 Adapter 合约。
+- [ ] Core 提供一个统一、平台中性的 `IssuePolicy` contract，覆盖 enrichment、派发决策、完成和失败处理。
+- [ ] 未注册 `IssuePolicy` 时，原 TAPD Adapter 行为不变。
 - [ ] Workflow Template Catalog 支持从外部 OTP `priv` 目录发现模板。
 - [ ] Worker 终止路径支持通用 terminal outcome callback，不直接判断 TAPD 自定义字段。
-- [ ] Workspace cleanup/object-cache 行为通过通用 policy/hook 接口表达。
+- [ ] 如迁移需要，Workspace 只增加平台中性的 repository bootstrap policy/hook，不直接实现 Lite object cache 策略。
 
 验收：Core 扩展机制测试使用中性 fake extension，不依赖 GitLab Lite 模块。
 
@@ -275,6 +384,7 @@ Agent Rule 应提供一个提交前检查清单：
 - [ ] 使用独立 application 名和 module namespace。
 - [ ] 扩展 manifest 声明 id、版本和所需 Core contract version。
 - [ ] 扩展通过 source/catalog 注册 Repo、Tracker、Tool 和 Template 能力。
+- [ ] 第一阶段通过同仓 path dependency 装配，禁止直接依赖 Core 私有模块。
 - [ ] Core 只通过 behaviour/facade 调用扩展。
 
 验收：扩展目录可以独立编译和运行单元测试；移除装配配置后 Core 仍可编译。
@@ -282,10 +392,11 @@ Agent Rule 应提供一个提交前检查清单：
 #### P0-4：业务代码等价迁移
 
 - [ ] 迁移 GitLab blob search、参数校验、结果规范化和 token 脱敏。
-- [ ] 迁移 TAPD Bug AI workflow、model level、候选筛选和完成工具。
+- [ ] 将 GitLab Lite 迁移为可替换 Repo Backend，并且不被 TAPD Policy 直接引用。
+- [ ] 将 TAPD Bug AI workflow、model level、候选筛选和完成工具迁移为长期 `IssuePolicy`。
 - [ ] 迁移 Confusions、异常收尾、返工轮次和 final workpad 规则。
 - [ ] 迁移 `tapd/git/codex` 模板和 partial。
-- [ ] 迁移 object-cache helper 与启停脚本。
+- [ ] 将 object-cache helper、配置和启用策略迁入扩展的 `repo_bootstrap/`。
 - [ ] 保留原模板别名和必要环境变量兼容层。
 
 验收：迁移前后的工具 inventory、配置错误、成功结果和失败结果一致。
@@ -306,7 +417,7 @@ rg -n "AI特殊工作流|AI模型等级|tapd_git_codex|GITLAB_API_TOKEN" elixir/
 
 除兼容边界或明确批准的通用配置声明外，结果应为空。
 
-#### P0-6：双模式回归验证
+#### P0-6：三模式回归验证
 
 - [ ] 未启用扩展时，原 TAPD + GitHub 测试和模板 inventory 通过。
 - [ ] 启用扩展时，TAPD + GitLab Lite 定向测试通过。
@@ -327,11 +438,21 @@ rg -n "AI特殊工作流|AI模型等级|tapd_git_codex|GITLAB_API_TOKEN" elixir/
 
 - [ ] 新建 `extensions/maestro_tapd_gitlab_lite/AGENTS.md`，完整描述分离后的目录结构和所有权。
 - [ ] 在项目级 Agent 指引中增加到扩展规则的入口以及“Lite 开发不得直接进入 Core”的保护条款。
-- [ ] Rule 明确允许修改 Core 的条件、禁止的 Lite 硬编码和双模式测试要求。
+- [ ] Rule 明确允许修改 Core 的条件、禁止的 Lite 硬编码和三模式测试要求。
 - [ ] Rule 包含提交前边界检查清单和常用验证命令。
 - [ ] 使用一个小型模拟需求执行新 Agent 冷启动验证。
 
 验收：新 Agent 仅根据仓库规则即可识别正确开发目录；除非任务明确需要通用扩展接口，否则不会修改 Core 文件。
+
+#### P0-9：上游 Provider 可替换性
+
+- [ ] TAPD `IssuePolicy` 测试使用 Repo facade/fake backend，不依赖 GitLab Lite 具体模块。
+- [ ] GitLab Lite Backend 和模拟上游 GitLab Backend 通过同一组最小 Repo contract tests。
+- [ ] 支持通过注册或配置选择 Repo Backend，不在 TAPD 业务代码中按 provider 名称分支。
+- [ ] 建立上游 GitLab 能力矩阵和删除 Lite 重复能力的迁移模板。
+- [ ] Object cache 可以接入替代 Backend，或在上游等价覆盖时整体关闭。
+
+验收：将 Repo Backend 从 GitLab Lite 切换到 fake upstream backend 后，公司 TAPD Policy 测试无需修改。
 
 ### 7.2 Nice-to-Have（P1）
 
@@ -368,54 +489,65 @@ rg -n "AI特殊工作流|AI模型等级|tapd_git_codex|GITLAB_API_TOKEN" elixir/
 
 退出条件：每一项现有行为都有所有者和目标位置。
 
-### Phase 2：实现最小宿主扩展点（预计 3—5 天）
+### Phase 2：先分离长期 TAPD Policy（预计 3—5 天）
 
 1. 外部 Dynamic Tool source。
 2. 外部 Template Catalog source。
-3. Tracker policy/adapter composition。
-4. Terminal outcome callback。
-5. Workspace policy/hook。
-6. 全部使用 fake extension 完成 Core contract tests。
+3. 增加一个统一 `IssuePolicy` contract，不包装整个 TAPD Adapter。
+4. 将字段 enrichment、候选筛选、成功完成和失败收尾迁入公司 Policy。
+5. 将字段编号、接受值、完成值、异常值、活动状态和 Story/Bug 差异配置化。
+6. 使用 fake Repo backend 验证 Policy 不依赖 GitLab Lite。
 
-退出条件：Core 可以加载一个不含 GitLab/TAPD 业务的测试扩展。
+退出条件：禁用 Policy 时原 TAPD 行为不变；启用 Policy 时公司 AI 工作流通过，并且 Policy 不引用 GitLab Lite 模块。
 
-### Phase 3：创建并迁移独立扩展（预计 4—7 天）
+### Phase 3：把 GitLab Lite 收缩为临时 Backend（预计 3—5 天）
 
 迁移顺序：
 
-1. Git-only Adapter 和 GitLab code search。
-2. TAPD Bug 字段、候选和完成策略。
-3. Workflow capability gate 和 terminal outcome。
-4. 模板、partial 和 workspace automation。
-5. 启停脚本、环境配置和文档。
-6. 新建扩展级 Agent Rule，并在项目级指引中增加导航和 Core 保护条款。
-7. 对应单元测试、契约测试和集成测试。
+1. 定义最小 Repo backend/capability contract。
+2. 迁移 Git-only Adapter 和 GitLab code search。
+3. 移除 TAPD Policy 对 GitLab Lite 具体模块的引用。
+4. 用 fake upstream backend 运行相同 TAPD Policy 测试。
+5. 保持 Lite 不实现 MR、review、pipeline、approval 和 merge。
 
 每一步先复制到新边界、切换注册、验证，再删除旧实现，避免一次性大搬迁。
 
-退出条件：Lite 业务路径全部从独立 OTP application 提供。
+退出条件：Repo Backend 可以通过注册替换；更换 Backend 不改变公司 TAPD Policy。
 
-### Phase 4：收缩 Core Delta（预计 2—3 天）
+### Phase 4：分离大仓库 Bootstrap 策略（预计 2—3 天）
 
-1. 删除 Core 中所有 Lite 特判和硬编码模板条目。
-2. 将通用改动拆分为可独立审查的提交。
-3. 检查 Core 与 upstream 的剩余差异。
-4. 更新架构文档和扩展开发说明。
-5. 运行 Agent Rule 中的边界扫描，确认 Core 未残留或新增 Lite 专属实现。
+1. 把 object-cache helper、锁、cache key、clone 参数和清理策略迁入扩展。
+2. Core 仅在必要时提供平台中性的 repository bootstrap contract 或安全 Git 原语。
+3. 验证禁用扩展时 Core 不创建 object cache，也不读取其环境变量。
+4. 验证 cache policy 可以作用于 fake upstream backend。
 
-退出条件：Core 只剩通用扩展接口、通用修复和薄装配。
+退出条件：Object cache 是可选扩展策略，不是 Core 默认行为，也不与 GitLab Lite 实现硬绑定。
 
-### Phase 5：全量验证与灰度（预计 2—4 天）
+### Phase 5：完成独立 OTP 应用并收缩 Core Delta（预计 3—5 天）
 
-1. 禁用扩展运行 Core 全量测试。
-2. 启用扩展运行全量测试和 secret scan。
-3. 重放本地 bare Git smoke。
-4. 在授权测试工作项上验证 Bug 成功、Bug 异常和 Story 成功路径。
-5. 保持单并发灰度，观察 workspace 清理、object cache 和重试。
+1. 以同仓 path dependency 装配独立 Mix project/OTP application。
+2. 迁移 Workflow capability gate、模板、partial、启停脚本、环境配置和文档。
+3. 新建扩展级 Agent Rule，并在项目级指引中增加导航和 Core 保护条款。
+4. 删除 Core 中所有 Lite 特判和硬编码模板条目。
+5. 将通用改动拆分为可独立审查的提交。
+6. 检查 Core 与 upstream 的剩余差异。
+7. 运行 Agent Rule 中的边界扫描，确认 Core 未残留或新增 Lite 专属实现。
+
+退出条件：Lite 业务路径全部由独立 OTP application 提供；Core 只剩通用扩展接口、通用修复和薄装配。
+
+### Phase 6：三模式验证与灰度（预计 2—4 天）
+
+1. Mode A：公司 TAPD Policy + GitLab Lite Backend。
+2. Mode B：公司 TAPD Policy + fake upstream GitLab Backend。
+3. Mode C：原始 TAPD + GitHub，不加载公司 Policy。
+4. 重放本地 bare Git smoke。
+5. 在授权测试工作项上验证 Bug 成功、Bug 异常、历史工作项和 Story 成功路径。
+6. 运行全量测试、Dialyzer 和 secret scan。
+7. 保持单并发灰度，观察 workspace 清理、object cache 和重试。
 
 退出条件：P0 验收项全部通过，且现有 Pilot 行为无回归。
 
-### Phase 6：上游升级演练（预计 1—2 天）
+### Phase 7：上游升级与 Provider 替换演练（预计 1—2 天）
 
 ```bash
 git fetch upstream
@@ -429,8 +561,10 @@ git merge --no-ff upstream/main
 2. 禁用扩展运行上游 Core 测试。
 3. 启用扩展运行 Lite 测试。
 4. 比较工具 inventory 和模板渲染快照。
-5. 运行 `make all`、`make secret-scan`。
-6. 记录升级耗时与冲突数。
+5. 用 fake/upstream-compatible Backend 替换 Lite Backend，确认 TAPD Policy 测试不变。
+6. 生成上游 GitLab 能力矩阵，标记可删除、需保留和待适配的 Lite 能力。
+7. 运行 `make all`、`make secret-scan`。
+8. 记录升级耗时与冲突数。
 
 退出条件：形成可重复的升级 runbook。
 
@@ -453,13 +587,14 @@ upstream  -> joosure/Maestro.git
 
 ```text
 1. test: characterize existing tapd gitlab lite behavior
-2. core: add generic external extension contracts
-3. extension: add maestro_tapd_gitlab_lite otp app
-4. extension: migrate repo and gitlab search behavior
-5. extension: migrate tapd bug workflow behavior
-6. extension: migrate templates and workspace automation
-7. core: remove tapd gitlab lite special cases
-8. ops/docs: enable and document the extension
+2. core: add generic issue policy and extension contracts
+3. extension: migrate company tapd ai policy
+4. extension: add replaceable gitlab lite backend
+5. extension: isolate repository bootstrap and object cache policy
+6. extension: add maestro_tapd_gitlab_lite otp app packaging
+7. extension: migrate templates and workspace automation
+8. core: remove tapd gitlab lite special cases
+9. ops/docs: enable and document the extension
 ```
 
 禁止把 Core 接口、业务迁移和格式化全仓库混在同一个提交中。
@@ -482,6 +617,25 @@ upstream  -> joosure/Maestro.git
 - capability gate、tool inventory、模板渲染。
 - object cache、workspace cleanup 和启动脚本。
 
+### 三种兼容模式
+
+| 模式 | TAPD 策略 | Repo Backend | 验证目的 |
+| --- | --- | --- | --- |
+| A | 公司 `IssuePolicy` | GitLab Lite | 当前生产行为 |
+| B | 公司 `IssuePolicy` | fake/upstream-compatible GitLab | 证明未来只需替换 Backend |
+| C | 原始 TAPD 行为 | GitHub | 证明扩展不影响上游原功能 |
+
+Mode A 和 Mode B 必须共享同一组 TAPD Policy 测试。Mode C 不得要求 GitLab token、object-cache 配置或公司 TAPD 字段。
+
+### 历史工作流保护
+
+- 未启用公司 Policy 时，所有 TAPD 行为与原始实现一致。
+- 工作项缺少扩展字段时，不进入公司 AI 流程，也不修改历史状态。
+- `AI特殊工作流` 不是接受值时，不派发、不改字段。
+- Bug 成功只更新公司 AI 字段，不改变 Bug 原状态。
+- 异常写入必须重新确认字段仍为接受值、状态仍允许，不能覆盖人工修改或 `AI已解决`。
+- Story 使用独立可配置策略，不默认套用 Bug 字段规则。
+
 ### 升级兼容模式
 
 - Core contract version 与 extension manifest 匹配。
@@ -492,7 +646,7 @@ upstream  -> joosure/Maestro.git
 ### Agent Rule 验证
 
 - 检查项目级指引能导航到扩展 `AGENTS.md`。
-- 检查扩展 Rule 覆盖目录所有权、依赖方向、Core 修改条件和双模式测试。
+- 检查扩展 Rule 覆盖目录所有权、依赖方向、Core 修改条件和三模式测试。
 - 使用模拟 Lite 需求执行一次新 Agent 冷启动验证。
 - 检查模拟改动未向 Core 引入 Lite 专属字符串或条件分支。
 
@@ -503,9 +657,10 @@ upstream  -> joosure/Maestro.git
 - Lite 专属实现位于扩展目录的比例：成功阈值 ≥ 90%，目标 ≥ 95%。
 - Core 中 Lite 专属字段名和条件分支：0。
 - 后续 Lite 需求默认落入扩展目录的比例：100%。
-- 禁用/启用两种模式的必需测试通过率：100%。
+- Mode A/B/C 三种模式的必需测试通过率：100%。
 - GitLab token 泄漏次数：0。
 - `tapd/git/codex` 工具 inventory 偏差：0。
+- Lite Backend 替换为 fake upstream backend 后需要修改的 TAPD Policy 测试数：0。
 
 ### Lagging Indicators
 
@@ -520,7 +675,9 @@ upstream  -> joosure/Maestro.git
 | --- | --- | --- |
 | 现有扩展框架只覆盖部分生命周期 | 业务仍会回流 Core | 先用 fake extension 驱动最小 contract，再迁移业务 |
 | 外部模板发现尚不完整 | 仍需改核心硬编码 catalog | 增加 template source registry，并从扩展 OTP `priv` 加载 |
-| TAPD Adapter 内部 API 不稳定 | 扩展依赖大量内部模块 | 增加稳定 facade，或用组合 Adapter 集中兼容逻辑 |
+| TAPD Adapter 内部 API 不稳定 | Policy 意外依赖内部模块 | 通过稳定 `IssuePolicy` context/facade 暴露所需数据，禁止包装 Adapter 或调用其私有实现 |
+| 上游 GitLab Provider 与 Lite contract 不完全一致 | 切换时需要重写业务流程 | TAPD Policy 只依赖 Repo facade/capability，并提前维护 Mode B contract tests |
+| IssuePolicy hook 过多或过细 | Core 形成回调意大利面 | 只保留 enrichment、dispatch、complete、failure 四个生命周期级入口 |
 | 迁移同时改变行为 | 无法区分重构回归与产品变化 | Characterization tests 先行，产品改动另立提交/计划 |
 | path dependency 修改 `mix.exs`/lockfile | 上游升级仍可能冲突 | 把装配改动限制在一处并保持独立提交 |
 | 通用改动与 Lite 改动难以拆分 | Core delta 无法收敛 | 按功能逐项迁移，并为每项指定最终所有者 |
@@ -535,15 +692,16 @@ upstream  -> joosure/Maestro.git
 5. 不自动回滚已写入的 `AI已解决` 或 `AI异常`；按审计记录人工处理。
 6. 不删除仍被 workspace clone 引用的共享 object cache。
 
-## 14. Open Questions
+## 14. Engineering Decisions and Open Questions
 
-### Blocking
+### Decided
 
-1. **[Engineering]** TAPD 扩展采用“包装原 TAPD Adapter”还是在 Core 增加 issue policy hooks？需要通过依赖面原型比较后决定。
-2. **[Engineering]** 外部 OTP 应用以同仓 path dependency 交付，还是从第一版即拆成独立 Git dependency？本计划默认先同仓 path dependency。
-3. **[Engineering]** object-cache helper 是通用能力并入 Core，还是继续作为 Lite 扩展资产？应依据是否存在 GitHub/CNB 大仓库需求决定。
+1. **[Engineering] TAPD 扩展方式**：Core 增加一个平台中性的 `IssuePolicy` contract，公司 TAPD AI 工作流作为独立 Policy 实现；不包装完整 TAPD Adapter。Core 不感知公司字段名和值。
+2. **[Engineering] OTP 应用交付方式**：第一阶段使用同仓 path dependency，同时保持独立 Mix project、OTP application、namespace、测试和版本。Contract 稳定后可切换为 Git dependency，业务代码不随交付方式改变。
+3. **[Engineering] Object cache 所有权**：具体实现、配置和启用策略第一阶段留在扩展；Core 仅在确有需要时提供平台中性的 repository bootstrap contract。出现第二个 Provider 使用者或上游等价能力后，再决定复用、上移或删除。
+4. **[Engineering] 上游 GitLab 采用策略**：GitLab Lite 是临时 Backend。上游正式 Provider 到来后，以能力矩阵为依据优先替换 Lite；公司 TAPD Policy 保持不变。
 
-### Non-Blocking
+### Non-Blocking Open Questions
 
 1. **[Maintainer]** 通用 Core 改动是否向原始 Maestro 上游提交独立 PR。
 2. **[Operations]** 扩展版本是否需要出现在 Dashboard 和 health endpoint。
@@ -554,6 +712,10 @@ upstream  -> joosure/Maestro.git
 - [ ] `extensions/maestro_tapd_gitlab_lite` 是独立、可编译、可测试的 OTP application。
 - [ ] 禁用扩展后，原 TAPD + GitHub 功能无行为变化。
 - [ ] 启用扩展后，GitLab Lite 已验证行为无回归。
+- [ ] 公司 TAPD Policy 不引用 GitLab Lite 具体模块，并可在 fake upstream backend 上通过相同测试。
+- [ ] 缺少公司字段或未接受 AI 处理的历史工作项不会被派发或修改。
+- [ ] GitLab Lite 已明确标记为可替换临时 Backend，没有扩展到 MR、Pipeline、审批或合并。
+- [ ] Object cache 实现和启用策略位于扩展，禁用扩展时 Core 不创建或配置 cache。
 - [ ] Core 中不存在 Lite 客户字段、GitLab API 或专属终止逻辑。
 - [ ] Core 剩余差异均已归类为通用扩展点或通用修复。
 - [ ] 已建立项目级导航和扩展级 Agent Rule，后续 Agent 能识别并遵守新目录边界。
