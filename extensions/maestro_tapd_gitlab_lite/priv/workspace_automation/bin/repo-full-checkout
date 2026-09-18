@@ -1,0 +1,192 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage:
+  repo-full-checkout validate-reference <repository-path> <expected-remote-url>
+  repo-full-checkout materialize <repository-path> <remote-url> <target-path> <branch>
+  repo-full-checkout install-agent-context <project-root> <workspace-root>
+
+Validates a complete local Git reference repository, materializes an independent
+task checkout from it before fetching the requested remote branch, or exposes
+repository-owned agent guidance and skills before Codex starts.
+EOF
+}
+
+fail() {
+  printf '%s\n' "$1" >&2
+  exit "${2:-64}"
+}
+
+validate_argument() {
+  value="$1"
+  label="$2"
+
+  if [ -z "$value" ]; then
+    fail "$label must not be empty"
+  fi
+
+  case "$value" in
+    *$'\n'*|*$'\r'*) fail "$label must not contain newlines" ;;
+  esac
+}
+
+validate_reference() {
+  reference_repo="$1"
+  expected_remote_url="$2"
+
+  validate_argument "$reference_repo" "repository path"
+  validate_argument "$expected_remote_url" "expected remote URL"
+
+  [ -d "$reference_repo" ] || fail "Complete checkout reference is not a directory: $reference_repo" 74
+  reference_repo="$(cd "$reference_repo" && pwd -P)"
+
+  git -C "$reference_repo" rev-parse --git-dir >/dev/null 2>&1 ||
+    fail "Complete checkout reference is not a Git repository: $reference_repo" 74
+
+  [ "$(git -C "$reference_repo" rev-parse --is-shallow-repository)" = "false" ] ||
+    fail "Complete checkout reference must not be shallow: $reference_repo" 74
+
+  [ "$(git -C "$reference_repo" config --bool --get core.sparseCheckout 2>/dev/null || true)" != "true" ] ||
+    fail "Complete checkout reference must not use sparse checkout: $reference_repo" 74
+
+  promisor_config="$(git -C "$reference_repo" config --get-regexp '^remote\..*\.promisor$' 2>/dev/null || true)"
+  partial_filter_config="$(git -C "$reference_repo" config --get-regexp '^remote\..*\.partialclonefilter$' 2>/dev/null || true)"
+
+  [ -z "$promisor_config" ] || fail "Complete checkout reference must not be a promisor clone: $reference_repo" 74
+  [ -z "$partial_filter_config" ] || fail "Complete checkout reference must not be a partial clone: $reference_repo" 74
+
+  configured_remote="$(git -C "$reference_repo" remote get-url origin 2>/dev/null || true)"
+  [ "$configured_remote" = "$expected_remote_url" ] ||
+    fail "Complete checkout reference origin does not match SOURCE_REPO_URL" 74
+
+  printf '%s\n' "$reference_repo"
+}
+
+materialize() {
+  reference_repo="$1"
+  remote_url="$2"
+  target_path="$3"
+  branch="$4"
+
+  validate_argument "$reference_repo" "repository path"
+  validate_argument "$remote_url" "remote URL"
+  validate_argument "$target_path" "target path"
+  validate_argument "$branch" "branch"
+
+  case "$target_path" in
+    /*) fail "Task checkout target must be relative to the workspace" ;;
+    ../*|*/../*|*/..) fail "Task checkout target must stay below the workspace" ;;
+  esac
+
+  git check-ref-format "refs/heads/$branch" >/dev/null 2>&1 ||
+    fail "Invalid task checkout branch: $branch"
+
+  [ ! -e "$target_path" ] || fail "Task checkout target already exists: $target_path" 74
+  initializing_path="${target_path}.initializing.$$"
+  [ ! -e "$initializing_path" ] || fail "Task checkout staging path already exists: $initializing_path" 74
+
+  cleanup_materialization() {
+    status="$?"
+    trap - EXIT HUP INT TERM
+    rm -rf -- "$initializing_path"
+    exit "$status"
+  }
+  trap cleanup_materialization EXIT HUP INT TERM
+
+  # A remote clone with --reference makes index-pack prove connectivity against
+  # the entire alternate object database. A local shared clone establishes refs
+  # and alternates immediately, so the remote fetch transfers only missing
+  # objects before the complete working tree is populated.
+  GIT_LFS_SKIP_SMUDGE=1 git clone --shared --no-checkout -- "$reference_repo" "$initializing_path"
+  git -C "$initializing_path" remote set-url origin "$remote_url"
+  GIT_LFS_SKIP_SMUDGE=1 GIT_TERMINAL_PROMPT=0 git -C "$initializing_path" fetch --no-tags origin \
+    "+refs/heads/$branch:refs/remotes/origin/$branch"
+  GIT_LFS_SKIP_SMUDGE=1 git -C "$initializing_path" checkout --force -B "$branch" \
+    --track "refs/remotes/origin/$branch"
+  mv -- "$initializing_path" "$target_path"
+  trap - EXIT HUP INT TERM
+}
+
+install_skill_root() {
+  source_root="$1"
+  source_label="$2"
+  destination_root="$3"
+
+  [ -d "$source_root" ] || return 0
+
+  for skill_dir in "$source_root"/*; do
+    [ -f "$skill_dir/SKILL.md" ] || continue
+    skill_name="$(basename "$skill_dir")"
+
+    case "$skill_name" in
+      *$'\n'*|*$'\r'*) fail "Repository skill directory names must not contain newlines" ;;
+    esac
+
+    destination="$destination_root/target-${source_label}-${skill_name}"
+    [ ! -e "$destination" ] || fail "Repository skill destination already exists: $destination" 74
+    cp -R -- "$skill_dir" "$destination"
+  done
+}
+
+install_agent_context() {
+  project_root="$1"
+  workspace_root="$2"
+
+  validate_argument "$project_root" "project root"
+  validate_argument "$workspace_root" "workspace root"
+
+  [ -d "$project_root" ] || fail "Configured project root is not a directory: $project_root" 74
+  [ -d "$workspace_root/.codex/skills" ] || fail "Workspace Codex automation pack is missing" 74
+
+  project_root="$(cd "$project_root" && pwd -P)"
+  workspace_root="$(cd "$workspace_root" && pwd -P)"
+
+  case "$project_root/" in
+    "$workspace_root/repo/"*) ;;
+    *) fail "Configured project root must stay below workspace repo/" 74 ;;
+  esac
+
+  relative_project_root="${project_root#"$workspace_root/"}"
+
+  cat >"$workspace_root/AGENTS.md" <<EOF
+# Target Repository Agent Guide
+
+The complete target-project checkout is at \`$relative_project_root\`.
+Before planning or editing, read \`$relative_project_root/AGENTS.md\` when it
+exists and read \`$relative_project_root/.codex/rules/AGENTS.md\` when it exists.
+For every file you inspect or modify, discover and follow every applicable
+\`AGENTS.md\` from the target-project root down to that file's directory.
+
+Repository-owned skills were copied into workspace \`.codex/skills\` before
+this Codex session started. Use them whenever their descriptions match the
+task. Start project discovery, builds, and tests in
+\`$relative_project_root\`. If its guidance identifies sibling monorepo paths,
+work in those paths under \`repo/\` and follow their applicable rules. Use
+\`repo/\` as the checkout root for repository-level Git operations.
+EOF
+
+  install_skill_root "$project_root/.codex/skills" "codex" "$workspace_root/.codex/skills"
+  install_skill_root "$project_root/.agents/skills" "agents" "$workspace_root/.codex/skills"
+}
+
+for executable in git cp mv rm; do
+  command -v "$executable" >/dev/null 2>&1 || fail "repo-full-checkout requires $executable" 127
+done
+
+case "$1" in
+  validate-reference)
+    [ "$#" -eq 3 ] || { usage >&2; exit 64; }
+    validate_reference "$2" "$3"
+    ;;
+  materialize)
+    [ "$#" -eq 5 ] || { usage >&2; exit 64; }
+    materialize "$2" "$3" "$4" "$5"
+    ;;
+  install-agent-context)
+    [ "$#" -eq 3 ] || { usage >&2; exit 64; }
+    install_agent_context "$2" "$3"
+    ;;
+  *) usage >&2; exit 64 ;;
+esac

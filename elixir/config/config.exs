@@ -9,19 +9,13 @@ config :symphony_elixir, :storage_table_catalog,
     SymphonyElixir.AssemblyCatalog.StorageContracts
   ]
 
-config :symphony_elixir, :workflow_runtime_extensions,
-  sources: [
-    SymphonyElixir.AssemblyCatalog.WorkflowExtensions,
-    MaestroTapdGitlabLite.RegistrySource
-  ]
+config :symphony_elixir, :workflow_runtime_extensions, sources: [SymphonyElixir.AssemblyCatalog.WorkflowExtensions]
 
-config :symphony_elixir, :repo_provider_adapters, %{
-  "git" => MaestroTapdGitlabLite.Repo.GitlabLiteBackend
-}
+config :symphony_elixir, :repo_provider_adapters, %{}
 
-config :symphony_elixir, :workspace_automation_sources, MaestroTapdGitlabLite.RepoBootstrap.AutomationSource
+config :symphony_elixir, :workspace_automation_sources, []
 
-config :symphony_elixir, :issue_policies, MaestroTapdGitlabLite.Tracker.CompanyTapdIssuePolicy
+config :symphony_elixir, :issue_policies, []
 
 config :symphony_elixir, :capability_sources,
   catalogs: [
@@ -78,4 +72,5 @@ config :symphony_elixir, SymphonyElixirWeb.Endpoint,
   check_origin: false,
   server: false
 
+import_config "../../extensions/maestro_tapd_gitlab_lite/config/config.exs"
 import_config "#{config_env()}.exs"

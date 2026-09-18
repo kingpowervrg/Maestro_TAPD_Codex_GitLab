@@ -19,15 +19,19 @@ are human-owned or stopped states and are deliberately absent from
    in that checkout call. Confirm the working branch is neither the development
    base nor final integration branch `{{ repo.base_branch }}` and follows the
    configured work prefix before any commit or push.
-4. The initial clone is blobless, sparse, uses a sparse index, and borrows
-   immutable Git objects from the shared per-remote cache prepared outside task
-   workspaces. Before editing, call `repo_remote_search` with exact identifiers and the development ref to
-   locate likely files without downloading blobs. Then call `repo_sparse_add`
-   only for the smallest required target directories; never add `.` or the
-   repository root. Fetch Git LFS objects only for explicitly
-   required paths. Then work only under `repo/`, implement the scoped change,
-   and run every repository and Story-required validation step. Record commands
-   and outcomes in the workpad.
+4. Repository materialization follows `AI模型等级`. `high` and `xhigh` use a
+   local-first complete checkout borrowed from the configured reference
+   repository, followed by a fetch of only the requested remote branch delta;
+   repository-owned `AGENTS.md` guidance and skills are installed before Codex
+   starts. Read and follow the generated workspace-root `AGENTS.md`, do not call
+   `repo_sparse_add`, and use local search inside the configured project root.
+   `low` and `medium` use the blobless sparse checkout and sparse index. In that
+   mode, call `repo_remote_search` with exact identifiers and the development
+   ref, then call `repo_sparse_add` only for the smallest required target
+   directories; never add `.` or the repository root. In either mode, fetch Git
+   LFS objects only for explicitly required paths, work only under `repo/`, run
+   every repository and Story-required validation step, and record commands and
+   outcomes in the workpad.
 5. Use `repo_diff` with its whitespace check enabled, compare against the Story
    development base, and verify that only the intended changes are present.
 6. Use `repo_commit` with canonical mode `all` or `staged`. Never commit

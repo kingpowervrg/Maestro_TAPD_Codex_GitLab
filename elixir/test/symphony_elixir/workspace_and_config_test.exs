@@ -194,7 +194,7 @@ defmodule SymphonyElixir.WorkspaceAndConfigTest do
     end
   end
 
-  test "workspace hooks receive the issue development branch" do
+  test "workspace hooks receive provider-neutral issue execution context" do
     test_root =
       Path.join(
         System.tmp_dir!(),
@@ -206,19 +206,25 @@ defmodule SymphonyElixir.WorkspaceAndConfigTest do
 
       write_workflow_file!(Workflow.workflow_file_path(),
         workspace_root: workspace_root,
-        hook_after_create: "printf '%s\\n' \"$SYMPHONY_ISSUE_BRANCH_NAME\" > issue-branch.txt"
+        hook_after_create: """
+        printf '%s\\n' "$SYMPHONY_ISSUE_BRANCH_NAME" > issue-branch.txt
+        printf '%s\\n' "$SYMPHONY_AGENT_REASONING_EFFORT" > reasoning-effort.txt
+        """
       )
 
       issue = %Issue{
         id: "1",
         identifier: "TAPD-1",
-        branch_name: "v24.9.0/battle_royale"
+        branch_name: "v24.9.0/battle_royale",
+        agent_options: %{reasoning_effort: "high"}
       }
 
       assert {:ok, workspace} = Workspace.create_for_issue(issue)
 
       assert File.read!(Path.join(workspace, "issue-branch.txt")) ==
                "v24.9.0/battle_royale\n"
+
+      assert File.read!(Path.join(workspace, "reasoning-effort.txt")) == "high\n"
     after
       File.rm_rf(test_root)
     end

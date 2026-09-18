@@ -264,7 +264,7 @@ defmodule SymphonyElixir.WorkflowTemplatesTest do
 
   test "bundled workflow template registry covers concrete templates" do
     assert Enum.sort(TemplateRegistry.aliases()) == Enum.sort(Templates.aliases())
-    assert Enum.sort(workflow_template_readme_aliases()) == Enum.sort(TemplateRegistry.aliases())
+    assert workflow_template_readme_aliases() -- TemplateRegistry.aliases() == []
 
     assert {:ok, entry} = TemplateRegistry.fetch(TemplateRegistry.local_quickstart_alias())
     assert entry.tracker_kind == TrackerKinds.memory()
@@ -883,13 +883,28 @@ defmodule SymphonyElixir.WorkflowTemplatesTest do
     assert after_create =~ "--reference-if-able \"$git_object_cache\""
     assert after_create =~ "git -C repo sparse-checkout reapply --sparse-index"
     assert after_create =~ "SYMPHONY_ISSUE_BRANCH_NAME"
-    assert after_create =~ "--branch \"$task_base_branch\""
+    assert after_create =~ "SYMPHONY_AGENT_REASONING_EFFORT"
+    assert after_create =~ "high|xhigh"
+    assert after_create =~ "SOURCE_REPO_LOCAL_REFERENCE"
+    assert after_create =~ "SOURCE_REPO_PROJECT_SUBDIR"
+    assert after_create =~ "repo-full-checkout"
+    assert after_create =~ "repo-full-checkout\" materialize"
+    assert after_create =~ "full-initializing"
+    assert after_create =~ "repo \"$task_base_branch\""
 
     before_run = get_in(config, ["hooks", "before_run"])
     assert before_run =~ "SYMPHONY_ISSUE_BRANCH_NAME"
     assert before_run =~ "refs/remotes/origin/$task_base_branch"
+    assert before_run =~ "repo-materialization-mode"
+    assert before_run =~ "expected_repo_materialization_mode"
+    assert before_run =~ "Complete repository materialization did not finish"
+    assert before_run =~ "does not match the current reasoning effort"
+    assert before_run =~ "--no-tags origin"
     assert prompt =~ "Story development base"
     assert prompt =~ "final integration branch"
+    assert prompt =~ "AI模型等级"
+    assert prompt =~ "`high` and `xhigh`"
+    assert prompt =~ "complete checkout"
 
     tool_context =
       SymphonyElixir.Agent.DynamicTool.capture_context(

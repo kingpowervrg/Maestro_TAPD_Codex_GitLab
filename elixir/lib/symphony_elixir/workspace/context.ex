@@ -8,7 +8,8 @@ defmodule SymphonyElixir.Workspace.Context do
           issue_id: term(),
           issue_identifier: String.t(),
           run_id: String.t() | nil,
-          branch_name: String.t() | nil
+          branch_name: String.t() | nil,
+          reasoning_effort: String.t() | nil
         }
 
   @spec issue_context(map() | String.t() | nil) :: issue_context()
@@ -17,7 +18,8 @@ defmodule SymphonyElixir.Workspace.Context do
       issue_id: issue_id,
       issue_identifier: identifier || "issue",
       run_id: Map.get(issue, :run_id),
-      branch_name: Map.get(issue, :branch_name)
+      branch_name: Map.get(issue, :branch_name),
+      reasoning_effort: reasoning_effort(issue)
     }
   end
 
@@ -26,7 +28,8 @@ defmodule SymphonyElixir.Workspace.Context do
       issue_id: nil,
       issue_identifier: identifier,
       run_id: nil,
-      branch_name: nil
+      branch_name: nil,
+      reasoning_effort: nil
     }
   end
 
@@ -35,7 +38,8 @@ defmodule SymphonyElixir.Workspace.Context do
       issue_id: nil,
       issue_identifier: "issue",
       run_id: nil,
-      branch_name: nil
+      branch_name: nil,
+      reasoning_effort: nil
     }
   end
 
@@ -61,4 +65,23 @@ defmodule SymphonyElixir.Workspace.Context do
   end
 
   defp tracker_kind, do: Tracker.current_kind()
+
+  defp reasoning_effort(issue) when is_map(issue) do
+    issue
+    |> Map.get(:agent_options, %{})
+    |> case do
+      options when is_map(options) -> Map.get(options, :reasoning_effort) || Map.get(options, "reasoning_effort")
+      _options -> nil
+    end
+    |> normalize_optional_string()
+  end
+
+  defp normalize_optional_string(value) when is_binary(value) do
+    case String.trim(value) do
+      "" -> nil
+      normalized -> normalized
+    end
+  end
+
+  defp normalize_optional_string(_value), do: nil
 end

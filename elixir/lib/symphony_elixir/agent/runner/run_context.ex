@@ -24,11 +24,13 @@ defmodule SymphonyElixir.Agent.Runner.RunContext do
   end
 
   @spec run_issue_context(term(), String.t()) :: term()
-  def run_issue_context(%Issue{id: issue_id, identifier: identifier}, run_id) do
+  def run_issue_context(%Issue{id: issue_id, identifier: identifier} = issue, run_id) do
     %{
       id: issue_id,
       identifier: identifier,
-      run_id: run_id
+      run_id: run_id,
+      branch_name: issue.branch_name,
+      agent_options: issue.agent_options
     }
   end
 

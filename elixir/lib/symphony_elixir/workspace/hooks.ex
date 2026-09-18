@@ -8,6 +8,7 @@ defmodule SymphonyElixir.Workspace.Hooks do
   alias SymphonyElixir.Workspace.Paths
 
   @issue_branch_env "SYMPHONY_ISSUE_BRANCH_NAME"
+  @reasoning_effort_env "SYMPHONY_AGENT_REASONING_EFFORT"
 
   @type worker_host :: String.t() | nil
   @type issue_context :: map()
@@ -131,7 +132,7 @@ defmodule SymphonyElixir.Workspace.Hooks do
     script =
       [
         workspace_automation_remote_assign(workspace),
-        issue_branch_remote_assign(issue_context),
+        issue_context_remote_assign(issue_context),
         "cd #{Paths.shell_escape(workspace)}",
         command
       ]
@@ -278,7 +279,8 @@ defmodule SymphonyElixir.Workspace.Hooks do
   defp workspace_automation_env(workspace, issue_context)
        when is_binary(workspace) and is_map(issue_context) do
     [
-      {@issue_branch_env, present_string(issue_context[:branch_name]) || ""}
+      {@issue_branch_env, present_string(issue_context[:branch_name]) || ""},
+      {@reasoning_effort_env, present_string(issue_context[:reasoning_effort]) || ""}
       | AutomationPack.runtime_env(workspace, AgentProvider.workspace_automation_destination_dir())
     ]
   end
@@ -287,12 +289,15 @@ defmodule SymphonyElixir.Workspace.Hooks do
     AutomationPack.remote_shell_assign(workspace, AgentProvider.workspace_automation_destination_dir())
   end
 
-  defp issue_branch_remote_assign(issue_context) when is_map(issue_context) do
+  defp issue_context_remote_assign(issue_context) when is_map(issue_context) do
     branch_name = present_string(issue_context[:branch_name]) || ""
+    reasoning_effort = present_string(issue_context[:reasoning_effort]) || ""
 
     [
       Paths.remote_shell_assign(@issue_branch_env, branch_name),
-      "export #{@issue_branch_env}"
+      "export #{@issue_branch_env}",
+      Paths.remote_shell_assign(@reasoning_effort_env, reasoning_effort),
+      "export #{@reasoning_effort_env}"
     ]
     |> Enum.join("\n")
   end

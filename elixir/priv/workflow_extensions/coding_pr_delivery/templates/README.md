@@ -31,5 +31,4 @@ tapd/cnb/opencode
 tapd/cnb/claude_code
 tapd/cnb/codebuddy_code
 tapd/github/codex
-tapd/git/codex
 ```

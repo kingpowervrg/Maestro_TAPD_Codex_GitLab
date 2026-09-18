@@ -49,12 +49,6 @@ generated inventory for the matching semantic capability:
   Story ids.
 - `tracker.provider_diagnostics`: run fixed read-only TAPD provider diagnostics
   when explicitly exposed for operator or troubleshooting workflows.
-- `tracker.complete_ai_workflow`: after a validated code change is committed,
-  pushed, and recorded in the workpad, change an accepted TAPD Bug's configured
-  `AI特殊工作流` field to `AI已解决`, read the Bug back, then update the canonical
-  workpad with the supplied final body. Pass the existing `workpad_id` and a
-  complete body whose final AI workflow item is checked. The tool writes that
-  body only after read-back succeeds. Never call it before successful delivery.
 
 If the inventory does not list the required typed capability, treat that as a
 workflow blocker unless the prompt explicitly supplies a different typed tool.
@@ -104,16 +98,6 @@ canonical workpad for the Story.
 
 For a TAPD Bug, include `"entity_type": "bug"` when creating the workpad or a
 general comment.
-
-Complete an accepted Bug after successful delivery:
-
-```json
-{
-  "issue_id": "{{ issue.id }}",
-  "workpad_id": "tapd:issue:{{ issue.id }}:workpad",
-  "body": "## Workpad\n\n### Plan\n\n- [x] Complete the TAPD AI workflow — AI特殊工作流=AI已解决 verified by read-back\n\n..."
-}
-```
 
 Create a general comment:
 

@@ -90,17 +90,57 @@ hooks:
       echo "SOURCE_REPO_URL is required" >&2
       exit 1
     fi
-    git_object_cache_root="${SYMPHONY_GIT_OBJECT_CACHE_ROOT:-${SYMPHONY_WORKSPACE_ROOT}/.git-object-cache}"
-    git_object_cache="$("${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/bin/repo-object-cache" prepare "$SOURCE_REPO_URL" "$git_object_cache_root")"
     task_base_branch="${SYMPHONY_ISSUE_BRANCH_NAME:-${SOURCE_REPO_BASE_BRANCH:-}}"
-    if [ -n "$task_base_branch" ]; then
-      GIT_LFS_SKIP_SMUDGE=1 "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/bin/repo" clone "$SOURCE_REPO_URL" repo --depth 1 --filter blob:none --sparse --reference-if-able "$git_object_cache" --branch "$task_base_branch"
-    else
-      GIT_LFS_SKIP_SMUDGE=1 "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/bin/repo" clone "$SOURCE_REPO_URL" repo --depth 1 --filter blob:none --sparse --reference-if-able "$git_object_cache"
-    fi
-    git -C repo sparse-checkout reapply --sparse-index
+    repo_materialization_file="${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/repo-materialization-mode"
+    case "${SYMPHONY_AGENT_REASONING_EFFORT:-medium}" in
+      high|xhigh)
+        full_reference="$("${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/bin/repo-full-checkout" validate-reference "${SOURCE_REPO_LOCAL_REFERENCE:-}" "$SOURCE_REPO_URL")"
+        if [ -z "$task_base_branch" ]; then
+          echo "A target branch is required for complete repository materialization" >&2
+          exit 64
+        fi
+        printf '%s\n' full-initializing > "$repo_materialization_file"
+        "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/bin/repo-full-checkout" materialize \
+          "$full_reference" "$SOURCE_REPO_URL" repo "$task_base_branch"
+        project_subdir="${SOURCE_REPO_PROJECT_SUBDIR:-}"
+        if [ -z "$project_subdir" ] || [ "$project_subdir" = "." ]; then
+          project_root="$PWD/repo"
+        else
+          case "$project_subdir" in
+            /*|../*|*/../*|*/..) echo "SOURCE_REPO_PROJECT_SUBDIR must be a relative path below repo/" >&2; exit 64 ;;
+          esac
+          project_root="$PWD/repo/$project_subdir"
+        fi
+        "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/bin/repo-full-checkout" install-agent-context "$project_root" "$PWD"
+        printf '%s\n' full > "$repo_materialization_file"
+        ;;
+      *)
+        git_object_cache_root="${SYMPHONY_GIT_OBJECT_CACHE_ROOT:-${SYMPHONY_WORKSPACE_ROOT}/.git-object-cache}"
+        git_object_cache="$("${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/bin/repo-object-cache" prepare "$SOURCE_REPO_URL" "$git_object_cache_root")"
+        if [ -n "$task_base_branch" ]; then
+          GIT_LFS_SKIP_SMUDGE=1 "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/bin/repo" clone "$SOURCE_REPO_URL" repo --depth 1 --filter blob:none --sparse --reference-if-able "$git_object_cache" --branch "$task_base_branch"
+        else
+          GIT_LFS_SKIP_SMUDGE=1 "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/bin/repo" clone "$SOURCE_REPO_URL" repo --depth 1 --filter blob:none --sparse --reference-if-able "$git_object_cache"
+        fi
+        git -C repo sparse-checkout reapply --sparse-index
+        printf '%s\n' sparse > "$repo_materialization_file"
+        ;;
+    esac
   before_run: |
     task_base_branch="${SYMPHONY_ISSUE_BRANCH_NAME:-${SOURCE_REPO_BASE_BRANCH:-}}"
+    case "${SYMPHONY_AGENT_REASONING_EFFORT:-medium}" in
+      high|xhigh) expected_repo_materialization_mode=full ;;
+      *) expected_repo_materialization_mode=sparse ;;
+    esac
+    repo_materialization_mode="$(cat "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/repo-materialization-mode" 2>/dev/null || printf '%s' missing)"
+    if [ "$repo_materialization_mode" = "full-initializing" ]; then
+      echo "Complete repository materialization did not finish; remove the incomplete workspace and retry" >&2
+      exit 75
+    fi
+    if [ "$repo_materialization_mode" != "$expected_repo_materialization_mode" ]; then
+      echo "Existing workspace repository materialization does not match the current reasoning effort" >&2
+      exit 74
+    fi
     if [ -n "$task_base_branch" ] && [ -d repo/.git ]; then
       local_base_sha="$(git -C repo rev-parse "refs/remotes/origin/$task_base_branch" 2>/dev/null || true)"
       remote_base_sha="$(GIT_TERMINAL_PROMPT=0 git -C repo ls-remote --exit-code origin "refs/heads/$task_base_branch" | awk 'NR == 1 {print $1}')"
@@ -109,7 +149,11 @@ hooks:
         exit 1
       fi
       if [ "$local_base_sha" != "$remote_base_sha" ]; then
-        GIT_LFS_SKIP_SMUDGE=1 GIT_TERMINAL_PROMPT=0 git -C repo fetch --no-tags --depth 1 --filter=blob:none origin "+$task_base_branch:refs/remotes/origin/$task_base_branch"
+        if [ "$repo_materialization_mode" = "full" ]; then
+          GIT_LFS_SKIP_SMUDGE=1 GIT_TERMINAL_PROMPT=0 git -C repo fetch --no-tags origin "+$task_base_branch:refs/remotes/origin/$task_base_branch"
+        else
+          GIT_LFS_SKIP_SMUDGE=1 GIT_TERMINAL_PROMPT=0 git -C repo fetch --no-tags --depth 1 --filter=blob:none origin "+$task_base_branch:refs/remotes/origin/$task_base_branch"
+        fi
       fi
     fi
   before_remove: |
@@ -140,6 +184,7 @@ Current status: {{ issue.state }}
 Entity type: {% if issue.entity_type %}{{ issue.entity_type }}{% else %}story{% endif %}
 Workitem type: {% if issue.workitem_type_id %}{{ issue.workitem_type_id }}{% else %}unknown{% endif %}
 {% if issue.entity_type == "bug" %}AI特殊工作流: {{ issue.custom_fields.ai_special_workflow }}
+AI模型等级: {{ issue.custom_fields.ai_model_level }}
 {% endif %}
 Labels: {{ issue.labels }}
 URL: {{ issue.url }}

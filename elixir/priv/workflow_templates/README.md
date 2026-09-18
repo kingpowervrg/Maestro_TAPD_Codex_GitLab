@@ -30,7 +30,6 @@ tapd/cnb/opencode
 tapd/cnb/claude_code
 tapd/cnb/codebuddy_code
 tapd/github/codex
-tapd/git/codex
 ```
 
 See [`../workflow_extensions/README.md`](../workflow_extensions/README.md) for
@@ -159,7 +158,6 @@ tapd/cnb/opencode
 tapd/cnb/claude_code
 tapd/cnb/codebuddy_code
 tapd/github/codex
-tapd/git/codex
 ```
 
 内置 extension 资产边界见

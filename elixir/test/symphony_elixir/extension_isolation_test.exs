@@ -87,6 +87,7 @@ defmodule SymphonyElixir.ExtensionIsolationTest do
 
     assert {:ok, automation_dir} = SymphonyElixir.Workspace.AutomationPack.bundled_source_dir()
     assert File.regular?(Path.join([automation_dir, "bin", "repo-object-cache"]))
+    assert File.regular?(Path.join([automation_dir, "bin", "repo-full-checkout"]))
   end
 
   test "project agent guidance routes Lite work to the extension boundary" do

@@ -59,7 +59,6 @@ Linear 任务 -> GitHub 仓库 -> Codex Agent
 | `linear/github/claude_code` | Linear + GitHub + Claude Code | Linear/GitHub 流程 |
 | `linear/github/opencode.canary` | Linear + GitHub + OpenCode canary | OpenCode 试验 |
 | `tapd/github/codex` | TAPD + GitHub + Codex | TAPD 任务到 GitHub PR |
-| `tapd/git/codex` | TAPD + GitLab 远程搜索 + Git 推送 + Codex | 多任务共享 Git 对象缓存，定位后稀疏下载目标目录；缺陷标记 AI 已解决后清理任务目录 |
 | `tapd/cnb/opencode` | TAPD + CNB + OpenCode | TAPD/CNB 流程 |
 | `tapd/cnb/claude_code` | TAPD + CNB + Claude Code | TAPD/CNB 流程 |
 
@@ -71,7 +70,6 @@ Linear 任务 -> GitHub 仓库 -> Codex Agent
 | --- | --- |
 | 不配置凭据，先理解 Maestro | `memory/no_repo/mock` |
 | 用 Codex 跑 TAPD + GitHub 任务 | `tapd/github/codex` |
-| 用 Codex 跑 TAPD + GitLab 稀疏下载任务 | `tapd/git/codex` |
 | 用 OpenCode 跑 TAPD + CNB 任务 | `tapd/cnb/opencode` |
 | 用 Codex 跑 Linear + GitHub 任务 | `linear/github/codex` |
 | 用 Claude Code 跑 Linear + GitHub 任务 | `linear/github/claude_code` |
