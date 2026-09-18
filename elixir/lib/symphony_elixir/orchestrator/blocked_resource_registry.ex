@@ -9,8 +9,8 @@ defmodule SymphonyElixir.Orchestrator.BlockedResourceRegistry do
 
   use GenServer
 
+  alias SymphonyElixir.Config
   alias SymphonyElixir.Observability.Logger, as: ObservabilityLogger
-  alias SymphonyElixir.Workflow
 
   @default_relative_path [".symphony", "orchestrator_blocked_resources.json"]
 
@@ -297,8 +297,7 @@ defmodule SymphonyElixir.Orchestrator.BlockedResourceRegistry do
   end
 
   defp default_persistence_path do
-    Workflow.workflow_file_path()
-    |> Path.dirname()
+    Config.settings!().workspace.root
     |> Path.join(Path.join(@default_relative_path))
   rescue
     _reason -> nil

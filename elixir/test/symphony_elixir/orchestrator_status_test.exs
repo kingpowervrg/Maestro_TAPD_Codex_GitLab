@@ -2,6 +2,7 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
   use SymphonyElixir.TestSupport
 
   alias SymphonyElixir.Observability.StatusDashboard.{Presenter, PresenterOptions, Terminal, Throughput}
+  alias SymphonyElixir.Orchestrator.BlockedResourceRegistry
 
   @dashboard_terminal_columns 115
 
@@ -125,6 +126,70 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
              message: "some-event",
              timestamp: now
            }
+  end
+
+  test "operator stop ends a running issue and records a persistent dispatch block" do
+    issue_id = "issue-operator-stop"
+    registry_name = __MODULE__.OperatorStopRegistry
+    restored_registry_name = __MODULE__.RestoredOperatorStopRegistry
+    orchestrator_name = __MODULE__.OperatorStopOrchestrator
+    issue = %Issue{id: issue_id, identifier: "MT-STOP", title: "Stop test", state: "In Progress"}
+    persistence_path = Path.join(System.tmp_dir!(), "symphony-operator-stop-#{System.unique_integer([:positive])}.json")
+
+    {:ok, registry_pid} = BlockedResourceRegistry.start_link(name: registry_name, persistence_path: persistence_path)
+    {:ok, orchestrator_pid} = start_orchestrator(orchestrator_name)
+
+    on_exit(fn ->
+      if Process.alive?(orchestrator_pid), do: Process.exit(orchestrator_pid, :normal)
+      if Process.alive?(registry_pid), do: Process.exit(registry_pid, :normal)
+      if restored_registry_pid = Process.whereis(restored_registry_name), do: Process.exit(restored_registry_pid, :normal)
+      File.rm(persistence_path)
+    end)
+
+    initial_state = :sys.get_state(orchestrator_pid)
+
+    :sys.replace_state(orchestrator_pid, fn _state ->
+      %{
+        initial_state
+        | running: %{
+            issue_id => %{
+              pid: nil,
+              ref: nil,
+              issue: issue,
+              identifier: issue.identifier,
+              started_at: DateTime.utc_now(),
+              run_id: "run-operator-stop",
+              session_id: "session-operator-stop"
+            }
+          },
+          claimed: MapSet.put(initial_state.claimed, issue_id)
+      }
+    end)
+
+    assert :ok =
+             Orchestrator.stop_running_issue(issue_id,
+               server: orchestrator_name,
+               blocked_resource_registry: registry_name
+             )
+
+    assert %{running: []} = Orchestrator.snapshot(orchestrator_name, 50)
+
+    assert %{"blocker_code" => "operator_stopped", "issue_identifier" => "MT-STOP"} =
+             BlockedResourceRegistry.get_active_for_issue(issue_id, server: registry_name)
+
+    GenServer.stop(registry_pid)
+
+    {:ok, _restored_registry_pid} =
+      BlockedResourceRegistry.start_link(name: restored_registry_name, persistence_path: persistence_path)
+
+    assert %{"blocker_code" => "operator_stopped", "issue_identifier" => "MT-STOP"} =
+             BlockedResourceRegistry.get_active_for_issue(issue_id, server: restored_registry_name)
+
+    assert {:error, :not_running} =
+             Orchestrator.stop_running_issue(issue_id,
+               server: orchestrator_name,
+               blocked_resource_registry: registry_name
+             )
   end
 
   test "orchestrator snapshot reflects generic agent updates while preserving codex aliases" do

@@ -6,6 +6,8 @@ defmodule SymphonyElixir.Orchestrator do
   use GenServer
 
   alias SymphonyElixir.Orchestrator.AgentUpdates
+  alias SymphonyElixir.Orchestrator.BlockedResourceRegistry
+  alias SymphonyElixir.Orchestrator.Events
   alias SymphonyElixir.Orchestrator.IgnoredMessage
   alias SymphonyElixir.Orchestrator.PollCycle
   alias SymphonyElixir.Orchestrator.Polling
@@ -121,6 +123,35 @@ defmodule SymphonyElixir.Orchestrator do
     {:reply, Snapshot.build(state), state}
   end
 
+  def handle_call({:stop_running_issue, issue_id, opts}, _from, state)
+      when is_binary(issue_id) and is_list(opts) do
+    case Map.get(state.running, issue_id) do
+      nil ->
+        {:reply, {:error, :not_running}, state}
+
+      running_entry ->
+        case register_operator_stop(issue_id, running_entry, opts) do
+          {:ok, _record} ->
+            state = Termination.terminate_running_issue(state, issue_id, false, ServerOptions.running_opts(state))
+
+            Events.emit(:warning, :issue_operator_stopped, Map.get(running_entry, :issue), state, %{
+              issue_id: issue_id,
+              issue_identifier: Map.get(running_entry, :identifier),
+              run_id: Map.get(running_entry, :run_id),
+              session_id: Map.get(running_entry, :session_id),
+              result_summary: "operator_stopped",
+              message: "issue_operator_stopped issue_id=#{issue_id} issue_identifier=#{Map.get(running_entry, :identifier) || issue_id}"
+            })
+
+            ServerOptions.notify_dashboard()
+            {:reply, :ok, state}
+
+          {:error, reason} ->
+            {:reply, {:error, {:operator_stop_block_failed, reason}}, state}
+        end
+    end
+  end
+
   def handle_call(:request_refresh, _from, state) do
     {reply, state} = Polling.request_refresh(state)
     {:reply, reply, state}
@@ -138,5 +169,37 @@ defmodule SymphonyElixir.Orchestrator do
     else
       :unavailable
     end
+  end
+
+  @spec stop_running_issue(String.t(), keyword()) :: :ok | {:error, term()}
+  def stop_running_issue(issue_id, opts \\ [])
+
+  def stop_running_issue(issue_id, opts) when is_binary(issue_id) and is_list(opts) do
+    server = Keyword.get(opts, :server, __MODULE__)
+
+    if Process.whereis(server) do
+      GenServer.call(server, {:stop_running_issue, issue_id, opts})
+    else
+      {:error, :unavailable}
+    end
+  catch
+    :exit, _reason -> {:error, :unavailable}
+  end
+
+  def stop_running_issue(_issue_id, _opts), do: {:error, :invalid_issue_id}
+
+  defp register_operator_stop(issue_id, running_entry, opts) do
+    BlockedResourceRegistry.register(
+      %{
+        resource_kind: "tracker_issue",
+        resource_id: issue_id,
+        issue_identifier: Map.get(running_entry, :identifier),
+        run_id: Map.get(running_entry, :run_id),
+        session_id: Map.get(running_entry, :session_id),
+        blocker_code: "operator_stopped",
+        remediation_actions: ["Release the operator stop before retrying this issue."]
+      },
+      server: Keyword.get(opts, :blocked_resource_registry, BlockedResourceRegistry)
+    )
   end
 end

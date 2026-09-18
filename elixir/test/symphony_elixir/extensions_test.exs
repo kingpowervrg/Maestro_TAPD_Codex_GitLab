@@ -212,6 +212,12 @@ defmodule SymphonyElixir.ExtensionsTest do
     def handle_call(:request_refresh, _from, state) do
       {:reply, Keyword.get(state, :refresh, :unavailable), state}
     end
+
+    def handle_call({:stop_running_issue, issue_id, _opts}, _from, state) do
+      snapshot = Keyword.fetch!(state, :snapshot)
+      running = Enum.reject(snapshot.running, &(Map.get(&1, :issue_id) == issue_id))
+      {:reply, :ok, Keyword.put(state, :snapshot, %{snapshot | running: running})}
+    end
   end
 
   setup do
@@ -1372,6 +1378,8 @@ defmodule SymphonyElixir.ExtensionsTest do
     assert html =~ "Known provider capability unavailable reports"
     assert html =~ "repo.submit_change_proposal_review"
     assert html =~ "Live details"
+    assert html =~ "Stop session"
+    assert html =~ "Stops locally; does not update the tracker."
     assert html =~ "codex_turn_started"
     refute html =~ "data-runtime-clock="
     refute html =~ "setInterval(refreshRuntimeClocks"
@@ -1379,6 +1387,11 @@ defmodule SymphonyElixir.ExtensionsTest do
     refute html =~ "Transport"
     assert html =~ "status-badge-live"
     assert html =~ "status-badge-offline"
+
+    assert render_click(view, "request_stop_issue", %{"issue_id" => "issue-http"}) =~ "Stop this session?"
+
+    assert render_click(view, "confirm_stop_issue", %{"issue_id" => "issue-http"}) =~
+             "Session stopped locally. Release its operator stop before retrying it."
 
     updated_snapshot =
       put_in(snapshot.running, [

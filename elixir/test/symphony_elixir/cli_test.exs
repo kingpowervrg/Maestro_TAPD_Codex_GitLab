@@ -57,12 +57,21 @@ defmodule SymphonyElixir.CLITest do
   end
 
   test "defaults to WORKFLOW.md when workflow path is missing" do
+    parent = self()
+
     deps = %{
       file_regular?: fn path -> Path.basename(path) == "WORKFLOW.md" end,
       set_workflow_file_path: fn _path -> :ok end,
       set_logs_root: fn _path -> :ok end,
       set_server_port_override: fn _port -> :ok end,
-      validate_config: fn -> :ok end,
+      ensure_workflow_extensions_started: fn ->
+        send(parent, :workflow_extensions_started)
+        :ok
+      end,
+      validate_config: fn ->
+        assert_received :workflow_extensions_started
+        :ok
+      end,
       ensure_all_started: fn -> {:ok, [:symphony_elixir]} end
     }
 
@@ -121,6 +130,21 @@ defmodule SymphonyElixir.CLITest do
     assert :ok = CLI.evaluate([@ack_flag, "--template", template_alias], deps)
     assert_received {:workflow_checked, ^template_path}
     assert_received {:workflow_set, ^template_path}
+  end
+
+  test "reports workflow extension startup failure before configuration validation" do
+    deps = %{
+      file_regular?: fn _path -> true end,
+      set_workflow_file_path: fn _path -> :ok end,
+      set_logs_root: fn _path -> :ok end,
+      set_server_port_override: fn _port -> :ok end,
+      ensure_workflow_extensions_started: fn -> {:error, :unavailable} end,
+      validate_config: fn -> flunk("configuration should not be validated") end,
+      ensure_all_started: fn -> {:ok, [:symphony_elixir]} end
+    }
+
+    assert {:error, "Failed to start workflow extensions: :unavailable"} =
+             CLI.evaluate([@ack_flag, "WORKFLOW.md"], deps)
   end
 
   test "workflow template aliases come from bundled template files" do

@@ -34,6 +34,8 @@ defmodule SymphonyElixirWeb.DashboardLive do
       socket
       |> assign(:issue_identifier, issue_identifier)
       |> assign(:payload, load_payload(live_action, issue_identifier, :mount))
+      |> assign(:stop_confirmation_issue_id, nil)
+      |> assign(:stop_notice, nil)
       |> assign(:now, DateTime.utc_now())
 
     subscription_result =
@@ -100,6 +102,42 @@ defmodule SymphonyElixirWeb.DashboardLive do
        load_payload(socket.assigns.live_action, socket.assigns.issue_identifier, :refresh)
      )
      |> assign(:now, DateTime.utc_now())}
+  end
+
+  @impl true
+  def handle_event("request_stop_issue", %{"issue_id" => issue_id}, socket) when is_binary(issue_id) do
+    if running_issue?(socket.assigns.payload, issue_id) do
+      {:noreply, assign(socket, :stop_confirmation_issue_id, issue_id)}
+    else
+      {:noreply, assign(socket, :stop_notice, "The selected session is no longer running.")}
+    end
+  end
+
+  def handle_event("cancel_stop_issue", _params, socket) do
+    {:noreply, assign(socket, :stop_confirmation_issue_id, nil)}
+  end
+
+  def handle_event("confirm_stop_issue", %{"issue_id" => issue_id}, socket) when is_binary(issue_id) do
+    case SymphonyElixir.Orchestrator.stop_running_issue(issue_id, server: orchestrator()) do
+      :ok ->
+        {:noreply,
+         socket
+         |> assign(:stop_confirmation_issue_id, nil)
+         |> assign(:stop_notice, "Session stopped locally. Release its operator stop before retrying it.")
+         |> assign(:payload, load_payload(socket.assigns.live_action, socket.assigns.issue_identifier, :refresh))}
+
+      {:error, :not_running} ->
+        {:noreply,
+         socket
+         |> assign(:stop_confirmation_issue_id, nil)
+         |> assign(:stop_notice, "The selected session is no longer running.")}
+
+      {:error, reason} ->
+        {:noreply,
+         socket
+         |> assign(:stop_confirmation_issue_id, nil)
+         |> assign(:stop_notice, "Unable to stop the session: #{inspect(reason)}")}
+    end
   end
 
   @impl true
@@ -290,6 +328,7 @@ defmodule SymphonyElixirWeb.DashboardLive do
             </div>
           </div>
 
+          <p :if={@stop_notice} class="metric-detail"><%= @stop_notice %></p>
           <%= if @payload.running == [] do %>
             <p class="empty-state">No active sessions.</p>
           <% else %>
@@ -302,6 +341,7 @@ defmodule SymphonyElixirWeb.DashboardLive do
                   <col style="width: 8.5rem;" />
                   <col />
                   <col style="width: 10rem;" />
+                  <col style="width: 11rem;" />
                 </colgroup>
                 <thead>
                   <tr>
@@ -311,6 +351,7 @@ defmodule SymphonyElixirWeb.DashboardLive do
                     <th>Runtime / turns</th>
                     <th>Agent update</th>
                     <th>Tokens</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -363,6 +404,20 @@ defmodule SymphonyElixirWeb.DashboardLive do
                       <div class="token-stack numeric">
                         <span>Total: <%= format_int(entry.tokens.total_tokens) %></span>
                         <span class="muted">In <%= format_int(entry.tokens.input_tokens) %> / Out <%= format_int(entry.tokens.output_tokens) %></span>
+                      </div>
+                    </td>
+                    <td>
+                      <div class="detail-stack">
+                        <%= if @stop_confirmation_issue_id == entry.issue_id do %>
+                          <span class="metric-detail">Stop this session?</span>
+                          <div class="session-stack">
+                            <button type="button" class="subtle-button" phx-click="confirm_stop_issue" phx-value-issue_id={entry.issue_id}>Stop now</button>
+                            <button type="button" class="subtle-button" phx-click="cancel_stop_issue">Keep running</button>
+                          </div>
+                        <% else %>
+                          <button type="button" class="subtle-button" phx-click="request_stop_issue" phx-value-issue_id={entry.issue_id}>Stop session</button>
+                          <span class="muted event-meta">Stops locally; does not update the tracker.</span>
+                        <% end %>
                       </div>
                     </td>
                   </tr>
@@ -676,6 +731,11 @@ defmodule SymphonyElixirWeb.DashboardLive do
 
       payload_load_error_payload(live_action, issue_identifier)
   end
+
+  defp running_issue?(%{running: running}, issue_id) when is_list(running) and is_binary(issue_id),
+    do: Enum.any?(running, &(Map.get(&1, :issue_id) == issue_id))
+
+  defp running_issue?(_payload, _issue_id), do: false
 
   defp load_issue_payload(issue_identifier)
        when is_binary(issue_identifier) and issue_identifier != "" do

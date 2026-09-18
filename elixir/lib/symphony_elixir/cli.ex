@@ -11,6 +11,7 @@ defmodule SymphonyElixir.CLI do
   alias SymphonyElixir.Orchestrator.BlockedResourceRegistry
   alias SymphonyElixir.RepoProvider.Error, as: RepoProviderError
   alias SymphonyElixir.Tracker.Error, as: TrackerError
+  alias SymphonyElixir.Workflow.Extension.RuntimeBootstrap
   alias SymphonyElixir.Workflow.Template, as: WorkflowTemplates
   alias SymphonyWorkerDaemon.CLI, as: WorkerDaemonCLI
 
@@ -39,6 +40,7 @@ defmodule SymphonyElixir.CLI do
           optional(:set_server_host_override) => (String.t() -> :ok | {:error, term()}),
           required(:validate_config) => (-> :ok | {:error, term()}),
           required(:ensure_all_started) => (-> ensure_started_result()),
+          optional(:ensure_workflow_extensions_started) => (-> :ok | {:error, term()}),
           optional(:worker_daemon_evaluate) => ([String.t()] -> :ok | {:error, String.t()}),
           optional(:accounts_login) => (String.t(), String.t(), keyword() ->
                                           {:ok, map()} | {:error, term()}),
@@ -130,21 +132,33 @@ defmodule SymphonyElixir.CLI do
     if deps.file_regular?.(expanded_path) do
       :ok = deps.set_workflow_file_path.(expanded_path)
 
-      case deps.validate_config.() do
-        :ok ->
-          case deps.ensure_all_started.() do
-            {:ok, _started_apps} ->
-              :ok
+      with :ok <- ensure_workflow_extensions_started(deps),
+           :ok <- deps.validate_config.() do
+        case deps.ensure_all_started.() do
+          {:ok, _started_apps} ->
+            :ok
 
-            {:error, reason} ->
-              {:error, "Failed to start Symphony with workflow #{expanded_path}: #{inspect(reason)}"}
-          end
+          {:error, reason} ->
+            {:error, "Failed to start Symphony with workflow #{expanded_path}: #{inspect(reason)}"}
+        end
+      else
+        {:error, {:workflow_extension_start_failed, reason}} ->
+          {:error, "Failed to start workflow extensions: #{inspect(reason)}"}
 
         {:error, reason} ->
           {:error, format_config_error(reason)}
       end
     else
       {:error, "Workflow file not found: #{expanded_path}"}
+    end
+  end
+
+  defp ensure_workflow_extensions_started(deps) do
+    starter = Map.get(deps, :ensure_workflow_extensions_started, fn -> :ok end)
+
+    case starter.() do
+      :ok -> :ok
+      {:error, reason} -> {:error, {:workflow_extension_start_failed, reason}}
     end
   end
 
@@ -211,6 +225,7 @@ defmodule SymphonyElixir.CLI do
       set_server_port_override: &set_server_port_override/1,
       validate_config: &Config.validate!/0,
       ensure_all_started: fn -> Application.ensure_all_started(:symphony_elixir) end,
+      ensure_workflow_extensions_started: &RuntimeBootstrap.ensure_started/0,
       worker_daemon_evaluate: &WorkerDaemonCLI.evaluate/1,
       blocked_resources_snapshot: &blocked_resources_snapshot/0,
       blocked_resource_release: &blocked_resource_release/3
