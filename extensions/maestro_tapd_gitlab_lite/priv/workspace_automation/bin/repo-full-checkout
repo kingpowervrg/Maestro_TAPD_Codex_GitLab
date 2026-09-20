@@ -5,7 +5,7 @@ usage() {
   cat <<'EOF'
 Usage:
   repo-full-checkout validate-reference <repository-path> <expected-remote-url>
-  repo-full-checkout materialize <repository-path> <remote-url> <target-path> <branch> [path1;path2]
+  repo-full-checkout materialize <repository-path> <remote-url> <target-path> <branch> [path1,path2]
   repo-full-checkout install-agent-context <project-root> <workspace-root>
 
 Validates a complete local Git reference repository, materializes an independent
@@ -72,10 +72,10 @@ parse_sparse_paths() {
   [ -n "$sparse_path_spec" ] || return 0
 
   case "$sparse_path_spec" in
-    ';'*|*';') fail "Sparse checkout paths must not contain empty entries" ;;
+    ','*|*',') fail "Sparse checkout paths must not contain empty entries" ;;
   esac
 
-  IFS=';' read -r -a raw_sparse_paths <<<"$sparse_path_spec"
+  IFS=',' read -r -a raw_sparse_paths <<<"$sparse_path_spec"
   for raw_sparse_path in "${raw_sparse_paths[@]}"; do
     sparse_path="$(trim_path "$raw_sparse_path")"
     validate_sparse_path "$sparse_path"

@@ -110,7 +110,7 @@ defmodule MaestroTapdGitlabLite.RepoBootstrap.FullCheckoutTest do
       remote,
       "task-checkout",
       "master",
-      "Game/.agents;Game/Assets/_Script"
+      "Game/.agents,Game/Assets/_Script"
     ], cd: root)
 
     assert File.read!(Path.join(task_checkout, "Game/.agents/AGENTS.md")) == "rules\n"
@@ -139,7 +139,7 @@ defmodule MaestroTapdGitlabLite.RepoBootstrap.FullCheckoutTest do
     assert {output, 64} =
              System.cmd(
                @helper,
-               ["materialize", reference, "unused", "repo", "master", "Game/.agents;"],
+               ["materialize", reference, "unused", "repo", "master", "Game/.agents,"],
                stderr_to_stdout: true
              )
 
