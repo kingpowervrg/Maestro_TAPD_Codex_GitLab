@@ -27,6 +27,7 @@ defmodule SymphonyElixir.Tracker do
 
   alias SymphonyElixir.Issue
   alias SymphonyElixir.Tracker.{Adapter, Config, Error, ProjectRef, Registry}
+  alias SymphonyElixir.Tracker.IssuePolicy.Runtime, as: IssuePolicyRuntime
   alias SymphonyElixir.Workflow.Lifecycle, as: WorkflowLifecycle
 
   @type tracker_config :: Config.t()
@@ -174,6 +175,25 @@ defmodule SymphonyElixir.Tracker do
   def mark_ai_workflow_exception(%{kind: _} = tracker, issue_id, opts)
       when is_binary(issue_id) and is_list(opts),
       do: call_optional(tracker, :mark_ai_workflow_exception, [issue_id, opts], :ok)
+
+  @spec handle_operator_stop(String.t(), keyword()) :: :ok | :unhandled | {:error, term()}
+  def handle_operator_stop(issue_id, opts \\ [])
+      when is_binary(issue_id) and is_list(opts),
+      do: call_optional(:handle_operator_stop, [issue_id, opts], :unhandled)
+
+  @spec handle_operator_stop(tracker_config() | map(), String.t(), keyword()) ::
+          :ok | :unhandled | {:error, term()}
+  def handle_operator_stop(%{kind: _} = tracker, issue_id, opts)
+      when is_binary(issue_id) and is_list(opts),
+      do: call_optional(tracker, :handle_operator_stop, [issue_id, opts], :unhandled)
+
+  @spec operator_stop_policy_available?() :: boolean()
+  def operator_stop_policy_available? do
+    Config.current!()
+    |> IssuePolicyRuntime.operator_stop_supported?()
+  rescue
+    _reason -> false
+  end
 
   # ── Tooling ───────────────────────────────────────────────────────
 

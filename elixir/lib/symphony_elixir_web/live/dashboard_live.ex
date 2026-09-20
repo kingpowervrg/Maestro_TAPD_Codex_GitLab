@@ -118,12 +118,15 @@ defmodule SymphonyElixirWeb.DashboardLive do
   end
 
   def handle_event("confirm_stop_issue", %{"issue_id" => issue_id}, socket) when is_binary(issue_id) do
-    case SymphonyElixir.Orchestrator.stop_running_issue(issue_id, server: orchestrator()) do
+    case SymphonyElixir.Orchestrator.stop_running_issue(issue_id,
+           server: orchestrator(),
+           operator_stop: &SymphonyElixir.Tracker.handle_operator_stop/1
+         ) do
       :ok ->
         {:noreply,
          socket
          |> assign(:stop_confirmation_issue_id, nil)
-         |> assign(:stop_notice, "Session stopped locally. Release its operator stop before retrying it.")
+         |> assign(:stop_notice, "Session stopped locally.")
          |> assign(:payload, load_payload(socket.assigns.live_action, socket.assigns.issue_identifier, :refresh))}
 
       {:error, :not_running} ->

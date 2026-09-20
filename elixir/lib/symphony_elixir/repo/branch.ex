@@ -51,6 +51,16 @@ defmodule SymphonyElixir.Repo.Branch do
     end
   end
 
+  @spec matches_work_prefix?(String.t(), keyword()) :: boolean()
+  def matches_work_prefix?(branch, opts \\ [])
+
+  def matches_work_prefix?(branch, opts) when is_binary(branch) and is_list(opts) do
+    prefix = work_prefix(opts) <> "/"
+    String.starts_with?(branch, prefix) and byte_size(branch) > byte_size(prefix)
+  end
+
+  def matches_work_prefix?(_branch, _opts), do: false
+
   defp identifier_component(identifier) do
     case normalize_component(identifier) do
       nil ->

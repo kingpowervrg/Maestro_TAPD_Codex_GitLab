@@ -66,6 +66,8 @@ defmodule SymphonyElixir.Tracker.Adapter do
 
   @callback mark_ai_workflow_exception(Config.t(), String.t(), keyword()) ::
               :ok | {:error, Error.t() | term()}
+  @callback handle_operator_stop(Config.t(), String.t(), keyword()) ::
+              :ok | :unhandled | {:error, Error.t() | term()}
 
   @callback dynamic_tools(Config.t()) :: [map()]
   @callback tool_environment(Config.t()) :: map()
@@ -87,6 +89,7 @@ defmodule SymphonyElixir.Tracker.Adapter do
     create_comment: 4,
     update_issue_state: 4,
     mark_ai_workflow_exception: 3,
+    handle_operator_stop: 3,
     dynamic_tools: 1,
     tool_environment: 1,
     execute_dynamic_tool: 4,

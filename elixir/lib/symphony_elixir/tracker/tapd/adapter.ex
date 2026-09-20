@@ -177,12 +177,25 @@ defmodule SymphonyElixir.Tracker.Tapd.Adapter do
   def mark_ai_workflow_exception(tracker, issue_id, opts \\ [])
       when is_map(tracker) and is_binary(issue_id) and is_list(opts) do
     with {:ok, issue} <- fetch_policy_issue(tracker, issue_id, opts) do
-      IssuePolicyRuntime.handle_failure(tracker, %{
-        issue: issue,
-        fetch_issue: fn -> fetch_policy_issue(tracker, issue_id, opts) end,
-        update_fields: fn fields -> update_policy_fields(tracker, issue.id, fields, opts) end
-      })
+      IssuePolicyRuntime.handle_failure(tracker, policy_context(tracker, issue_id, issue, opts))
     end
+  end
+
+  @spec handle_operator_stop(TrackerConfig.t(), String.t(), keyword()) ::
+          :ok | :unhandled | {:error, term()}
+  def handle_operator_stop(tracker, issue_id, opts \\ [])
+      when is_map(tracker) and is_binary(issue_id) and is_list(opts) do
+    with {:ok, issue} <- fetch_policy_issue(tracker, issue_id, opts) do
+      IssuePolicyRuntime.handle_operator_stop(tracker, policy_context(tracker, issue_id, issue, opts))
+    end
+  end
+
+  defp policy_context(tracker, issue_id, issue, opts) do
+    %{
+      issue: issue,
+      fetch_issue: fn -> fetch_policy_issue(tracker, issue_id, opts) end,
+      update_fields: fn fields -> update_policy_fields(tracker, issue.id, fields, opts) end
+    }
   end
 
   defp fetch_policy_issue(tracker, issue_id, opts) do

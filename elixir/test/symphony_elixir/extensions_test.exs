@@ -1391,7 +1391,7 @@ defmodule SymphonyElixir.ExtensionsTest do
     assert render_click(view, "request_stop_issue", %{"issue_id" => "issue-http"}) =~ "Stop this session?"
 
     assert render_click(view, "confirm_stop_issue", %{"issue_id" => "issue-http"}) =~
-             "Session stopped locally. Release its operator stop before retrying it."
+             "Session stopped locally."
 
     updated_snapshot =
       put_in(snapshot.running, [

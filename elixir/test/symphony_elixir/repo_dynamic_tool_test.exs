@@ -143,6 +143,76 @@ defmodule SymphonyElixir.RepoDynamicToolTest do
     assert warning =~ "canonical mode \"all\""
   end
 
+  test "repo checkout rejects ambiguous or out-of-policy explicit branches" do
+    %{repo_path: repo_path} = setup_git_repo!()
+    context = repo_tool_context(repo_config(repo_path))
+
+    assert {:failure,
+            %{
+              "error" => %{
+                "code" => "invalid_arguments",
+                "message" => "Repo checkout accepts either identifier or branch, not both."
+              }
+            }} =
+             DynamicTool.execute(context, "repo_checkout", %{
+               "identifier" => "DEMO-45",
+               "branch" => "codex/demo-45"
+             })
+
+    assert {:failure,
+            %{
+              "error" => %{
+                "code" => "invalid_arguments",
+                "message" => message
+              }
+            }} =
+             DynamicTool.execute(context, "repo_checkout", %{
+               "branch" => "codex/demo-45",
+               "base" => "origin/master"
+             })
+
+    assert message =~ ~s(must start with the configured work prefix "typed/")
+    assert {:ok, "master"} = SymphonyElixir.Repo.current_branch(repo_path)
+
+    assert {:success,
+            %{
+              "data" => %{
+                "action" => "created",
+                "branch" => "typed/demo-45"
+              }
+            }} =
+             DynamicTool.execute(context, "repo_checkout", %{
+               "branch" => "typed/demo-45",
+               "base" => "origin/master"
+             })
+  end
+
+  test "repo push rejects a current branch outside the configured work prefix" do
+    %{repo_path: repo_path, remote_path: remote_path} = setup_git_repo!()
+    context = repo_tool_context(repo_config(repo_path))
+
+    run!("git", ["-C", repo_path, "switch", "-c", "codex/demo-46"])
+
+    assert {:failure,
+            %{
+              "error" => %{
+                "code" => "invalid_arguments",
+                "message" => message
+              }
+            }} = DynamicTool.execute(context, "repo_push", %{"set_upstream" => true})
+
+    assert message =~ ~s(must start with the configured work prefix "typed/")
+
+    assert {_output, status} =
+             System.cmd(
+               "git",
+               ["--git-dir", remote_path, "show-ref", "--verify", "refs/heads/codex/demo-46"],
+               command_opts()
+             )
+
+    assert status != 0
+  end
+
   test "repo diff normalizes JSON-encoded args arrays from typed tool callers" do
     %{repo_path: repo_path} = setup_git_repo!()
     context = repo_tool_context(repo_config(repo_path))

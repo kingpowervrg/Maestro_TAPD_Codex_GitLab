@@ -92,6 +92,7 @@ hooks:
     fi
     task_base_branch="${SYMPHONY_ISSUE_BRANCH_NAME:-${SOURCE_REPO_BASE_BRANCH:-}}"
     repo_materialization_file="${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/repo-materialization-mode"
+    repo_materialization_paths_file="${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/repo-materialization-paths"
     case "${SYMPHONY_AGENT_REASONING_EFFORT:-medium}" in
       high|xhigh)
         full_reference="$("${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/bin/repo-full-checkout" validate-reference "${SOURCE_REPO_LOCAL_REFERENCE:-}" "$SOURCE_REPO_URL")"
@@ -99,9 +100,20 @@ hooks:
           echo "A target branch is required for complete repository materialization" >&2
           exit 64
         fi
-        printf '%s\n' full-initializing > "$repo_materialization_file"
-        "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/bin/repo-full-checkout" materialize \
-          "$full_reference" "$SOURCE_REPO_URL" repo "$task_base_branch"
+        pull_paths="${SOURCE_REPO_PULL_PATHS:-}"
+        if [ -n "${pull_paths//[[:space:]]/}" ]; then
+          printf '%s\n' partial-initializing > "$repo_materialization_file"
+          printf '%s\n' "$pull_paths" > "$repo_materialization_paths_file"
+          "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/bin/repo-full-checkout" materialize \
+            "$full_reference" "$SOURCE_REPO_URL" repo "$task_base_branch" "$pull_paths"
+          printf '%s\n' partial > "$repo_materialization_file"
+        else
+          rm -f -- "$repo_materialization_paths_file"
+          printf '%s\n' full-initializing > "$repo_materialization_file"
+          "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/bin/repo-full-checkout" materialize \
+            "$full_reference" "$SOURCE_REPO_URL" repo "$task_base_branch"
+          printf '%s\n' full > "$repo_materialization_file"
+        fi
         project_subdir="${SOURCE_REPO_PROJECT_SUBDIR:-}"
         if [ -z "$project_subdir" ] || [ "$project_subdir" = "." ]; then
           project_root="$PWD/repo"
@@ -112,7 +124,6 @@ hooks:
           project_root="$PWD/repo/$project_subdir"
         fi
         "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/bin/repo-full-checkout" install-agent-context "$project_root" "$PWD"
-        printf '%s\n' full > "$repo_materialization_file"
         ;;
       *)
         git_object_cache_root="${SYMPHONY_GIT_OBJECT_CACHE_ROOT:-${SYMPHONY_WORKSPACE_ROOT}/.git-object-cache}"
@@ -129,17 +140,32 @@ hooks:
   before_run: |
     task_base_branch="${SYMPHONY_ISSUE_BRANCH_NAME:-${SOURCE_REPO_BASE_BRANCH:-}}"
     case "${SYMPHONY_AGENT_REASONING_EFFORT:-medium}" in
-      high|xhigh) expected_repo_materialization_mode=full ;;
+      high|xhigh)
+        configured_pull_paths="${SOURCE_REPO_PULL_PATHS:-}"
+        if [ -n "${configured_pull_paths//[[:space:]]/}" ]; then
+          expected_repo_materialization_mode=partial
+        else
+          expected_repo_materialization_mode=full
+        fi
+        ;;
       *) expected_repo_materialization_mode=sparse ;;
     esac
     repo_materialization_mode="$(cat "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/repo-materialization-mode" 2>/dev/null || printf '%s' missing)"
-    if [ "$repo_materialization_mode" = "full-initializing" ]; then
+    if [ "$repo_materialization_mode" = "full-initializing" ] || [ "$repo_materialization_mode" = "partial-initializing" ]; then
       echo "Complete repository materialization did not finish; remove the incomplete workspace and retry" >&2
       exit 75
     fi
     if [ "$repo_materialization_mode" != "$expected_repo_materialization_mode" ]; then
       echo "Existing workspace repository materialization does not match the current reasoning effort" >&2
       exit 74
+    fi
+    if [ "$repo_materialization_mode" = "partial" ]; then
+      configured_pull_paths="${SOURCE_REPO_PULL_PATHS:-}"
+      materialized_pull_paths="$(cat "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/repo-materialization-paths" 2>/dev/null || true)"
+      if [ "$materialized_pull_paths" != "$configured_pull_paths" ]; then
+        echo "Existing partial repository materialization does not match SOURCE_REPO_PULL_PATHS" >&2
+        exit 74
+      fi
     fi
     if [ -n "$task_base_branch" ] && [ -d repo/.git ]; then
       local_base_sha="$(git -C repo rev-parse "refs/remotes/origin/$task_base_branch" 2>/dev/null || true)"
@@ -168,6 +194,7 @@ agent_provider:
   options:
     command: codex --config shell_environment_policy.inherit=all --config 'shell_environment_policy.exclude=["GITLAB_API_TOKEN"]' --config model_reasoning_effort=medium --config 'project_root_markers=[]' --model gpt-5.3-codex app-server
     approval_policy: never
+    read_timeout_ms: 30000
     thread_sandbox: danger-full-access
     turn_sandbox_policy:
       type: dangerFullAccess

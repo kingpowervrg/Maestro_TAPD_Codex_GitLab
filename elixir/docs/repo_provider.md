@@ -85,6 +85,12 @@ authorization for the target repository's build APIs.
 It delegates to `symphony repo` and does not perform PR, review, check, or
 provider merge operations.
 
+The typed `repo_checkout` tool accepts either an issue `identifier`, which
+derives the branch from `repo.branch.work_prefix`, or an explicit `branch`, but
+never both. Explicit checkout branches and every branch passed to `repo_push`
+must begin with the configured work prefix. The tools reject a mismatched branch
+before changing the checkout or contacting the remote.
+
 ## Git-Only Provider
 
 Set `repo.provider.kind: git` when change proposals and review remain

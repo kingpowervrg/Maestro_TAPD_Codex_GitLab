@@ -943,6 +943,36 @@ defmodule SymphonyElixir.TapdAdapterTest do
     assert :atomics.get(reads, 1) == 2
   end
 
+  test "handled operator stop writes the configured AI exception value" do
+    tracker = tapd_ai_workflow_tracker()
+    issue_id = "1153000000000000105"
+    reads = :atomics.new(1, signed: false)
+
+    assert :ok =
+             SymphonyElixir.Tracker.Tapd.Adapter.handle_operator_stop(tracker, issue_id,
+               request_fun: fn request ->
+                 case request.method do
+                   "GET" ->
+                     value = if :atomics.add_get(reads, 1, 1) == 1, do: "接受/处理", else: "AI异常"
+                     {:ok, tapd_bug_response(issue_id, value)}
+
+                   "POST" ->
+                     assert request.url == "https://api.tapd.cn/bugs"
+
+                     assert request.params == %{
+                              "id" => issue_id,
+                              "custom_field_6" => "AI异常",
+                              "workspace_id" => "53000000"
+                            }
+
+                     {:ok, %{status: 200, body: %{"status" => 1, "data" => %{"Bug" => %{}}}}}
+                 end
+               end
+             )
+
+    assert :atomics.get(reads, 1) == 2
+  end
+
   test "create_comment writes TAPD Bug comments with the Bug entry type" do
     tracker = tapd_ai_workflow_tracker()
     issue_id = "1153000000000000106"

@@ -83,8 +83,14 @@ defmodule SymphonyElixir.Repo.ToolExecutor do
         "type" => "object",
         "additionalProperties" => false,
         "properties" => %{
-          "identifier" => %{"type" => ["string", "null"], "description" => "Workflow issue identifier used to derive a working branch."},
-          "branch" => %{"type" => ["string", "null"], "description" => "Explicit branch name to create or switch to."},
+          "identifier" => %{
+            "type" => ["string", "null"],
+            "description" => "Workflow issue identifier used to derive a working branch. Mutually exclusive with branch."
+          },
+          "branch" => %{
+            "type" => ["string", "null"],
+            "description" => "Explicit branch name to create or switch to. Mutually exclusive with identifier and must match the configured work prefix."
+          },
           "base" => %{"type" => ["string", "null"], "description" => "Base ref for branch creation."},
           "mode" => %{
             "type" => ["string", "null"],
@@ -207,6 +213,7 @@ defmodule SymphonyElixir.Repo.ToolExecutor do
   defp checkout(repo, arguments, opts) do
     with {:ok, args} <- checkout_args(arguments),
          {:ok, branch} <- checkout_branch(repo, args, opts),
+         :ok <- validate_work_branch(repo, branch, opts),
          :ok <- maybe_sync_base(repo, args, opts),
          {:ok, action} <- checkout_branch_action(repo, branch, args, opts),
          {:ok, status} <- Repo.status(Context.path(repo), opts) do
@@ -258,6 +265,7 @@ defmodule SymphonyElixir.Repo.ToolExecutor do
   defp push(repo, arguments, opts) do
     with {:ok, args} <- push_args(arguments),
          {:ok, branch} <- push_branch(repo, args, opts),
+         :ok <- validate_work_branch(repo, branch, opts),
          {:ok, local_head} <- Repo.head_sha(Context.path(repo), opts),
          {:ok, output} <- Repo.push(Context.path(repo), Context.remote_name(repo), branch, push_opts(args, opts)),
          {:ok, published_head} <- maybe_published_head(repo, branch, args, opts),
@@ -292,11 +300,12 @@ defmodule SymphonyElixir.Repo.ToolExecutor do
   end
 
   defp checkout_args(arguments) when is_map(arguments) do
-    with {:ok, mode} <- enum(arguments, "mode", ["create_or_switch", "create", "switch"], "create_or_switch") do
+    with {:ok, mode} <- enum(arguments, "mode", ["create_or_switch", "create", "switch"], "create_or_switch"),
+         {:ok, identifier, branch} <- checkout_reference(arguments) do
       {:ok,
        %{
-         identifier: nullable_string(arguments, "identifier"),
-         branch: nullable_string(arguments, "branch"),
+         identifier: identifier,
+         branch: branch,
          base: nullable_string(arguments, "base"),
          mode: mode,
          sync_base: optional_boolean(arguments, "sync_base", false)
@@ -305,6 +314,19 @@ defmodule SymphonyElixir.Repo.ToolExecutor do
   end
 
   defp checkout_args(_arguments), do: {:error, {:invalid_arguments, "Expected an object for repo checkout."}}
+
+  defp checkout_reference(arguments) do
+    identifier = nullable_string(arguments, "identifier")
+    branch = nullable_string(arguments, "branch")
+
+    case {identifier, branch} do
+      {identifier, branch} when is_binary(identifier) and is_binary(branch) ->
+        {:error, {:invalid_arguments, "Repo checkout accepts either identifier or branch, not both."}}
+
+      values ->
+        Tuple.insert_at(values, 0, :ok)
+    end
+  end
 
   defp diff_args(arguments) when is_map(arguments) do
     with {:ok, args} <- optional_string_list(arguments, "args") do
@@ -435,6 +457,18 @@ defmodule SymphonyElixir.Repo.ToolExecutor do
 
   defp push_branch(_repo, %{branch: branch}, _opts) when is_binary(branch), do: {:ok, branch}
   defp push_branch(repo, _args, opts), do: Repo.current_branch(Context.path(repo), opts)
+
+  defp validate_work_branch(repo, branch, opts) do
+    repo_opts = Context.repo_opts(repo, opts)
+
+    if Repo.matches_work_prefix?(branch, repo_opts) do
+      :ok
+    else
+      prefix = Repo.work_prefix(repo_opts)
+
+      {:error, {:invalid_arguments, "Workflow branch #{inspect(branch)} must start with the configured work prefix #{inspect(prefix <> "/")}."}}
+    end
+  end
 
   defp push_opts(args, opts) do
     opts

@@ -7,11 +7,14 @@ defmodule MaestroTapdGitlabLite.Tracker.CompanyTapdIssuePolicy do
 
   @policy_id "maestro.tapd.company_ai"
 
+  @impl true
   def id, do: @policy_id
 
+  @impl true
   def supports?(tracker),
     do: tracker_kind(tracker) in [nil, "tapd"] and PolicyConfig.enabled?(tracker)
 
+  @impl true
   def candidate_scope("bug", tracker) do
     if supports?(tracker) do
       %{
@@ -23,6 +26,7 @@ defmodule MaestroTapdGitlabLite.Tracker.CompanyTapdIssuePolicy do
 
   def candidate_scope(_entity_type, _tracker), do: nil
 
+  @impl true
   def enrich_issue(issue, %{tracker: tracker} = context) when is_map(issue) do
     raw_issue = Map.get(context, :raw_issue, %{})
     workflow_value = PolicyConfig.field_value(raw_issue, PolicyConfig.workflow_field(tracker))
@@ -52,6 +56,7 @@ defmodule MaestroTapdGitlabLite.Tracker.CompanyTapdIssuePolicy do
      issue |> Map.put(:custom_fields, custom_fields) |> Map.put(:agent_options, agent_options)}
   end
 
+  @impl true
   def evaluate_dispatch(issue, %{tracker: tracker}) when is_map(issue) do
     policy_fields = issue |> Map.get(:custom_fields, %{}) |> Map.get(id(), %{})
     workflow_value = Map.get(policy_fields, "workflow")
@@ -66,10 +71,16 @@ defmodule MaestroTapdGitlabLite.Tracker.CompanyTapdIssuePolicy do
     end
   end
 
+  @impl true
   def complete(context) when is_map(context),
     do: MaestroTapdGitlabLite.Tracker.PolicyLifecycle.complete(context)
 
+  @impl true
   def handle_failure(context) when is_map(context),
+    do: MaestroTapdGitlabLite.Tracker.PolicyLifecycle.handle_failure(context)
+
+  @impl true
+  def handle_operator_stop(context) when is_map(context),
     do: MaestroTapdGitlabLite.Tracker.PolicyLifecycle.handle_failure(context)
 
   defp tracker_kind(tracker), do: field(tracker, :kind)

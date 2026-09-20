@@ -59,6 +59,7 @@ defmodule SymphonyElixir.ExtensionIsolationTest do
     assert Runtime.evaluate_dispatch(enriched, tracker) == :allow
     assert Runtime.complete(tracker, %{result: :done}) == {:ok, :done}
     assert Runtime.handle_failure(tracker, %{}) == :ok
+    assert Runtime.handle_operator_stop(tracker, %{}) == :unhandled
   end
 
   test "Mode C disables the package and keeps Core Git/TAPD independent" do

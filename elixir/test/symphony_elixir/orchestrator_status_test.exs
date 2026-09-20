@@ -192,6 +192,51 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
              )
   end
 
+  test "handled operator stop ends a running issue without a dispatch block" do
+    issue_id = "issue-operator-stop-handled"
+    registry_name = __MODULE__.HandledOperatorStopRegistry
+    orchestrator_name = __MODULE__.HandledOperatorStopOrchestrator
+    issue = %Issue{id: issue_id, identifier: "MT-STOP-HANDLED", title: "Stop test", state: "In Progress"}
+
+    {:ok, registry_pid} = BlockedResourceRegistry.start_link(name: registry_name, persistence_path: false)
+    {:ok, orchestrator_pid} = start_orchestrator(orchestrator_name)
+
+    on_exit(fn ->
+      if Process.alive?(orchestrator_pid), do: Process.exit(orchestrator_pid, :normal)
+      if Process.alive?(registry_pid), do: Process.exit(registry_pid, :normal)
+    end)
+
+    initial_state = :sys.get_state(orchestrator_pid)
+
+    :sys.replace_state(orchestrator_pid, fn _state ->
+      %{
+        initial_state
+        | running: %{
+            issue_id => %{
+              pid: nil,
+              ref: nil,
+              issue: issue,
+              identifier: issue.identifier,
+              started_at: DateTime.utc_now(),
+              run_id: "run-operator-stop-handled",
+              session_id: "session-operator-stop-handled"
+            }
+          },
+          claimed: MapSet.put(initial_state.claimed, issue_id)
+      }
+    end)
+
+    assert :ok =
+             Orchestrator.stop_running_issue(issue_id,
+               server: orchestrator_name,
+               blocked_resource_registry: registry_name,
+               operator_stop: fn ^issue_id -> :ok end
+             )
+
+    assert %{running: []} = Orchestrator.snapshot(orchestrator_name, 50)
+    assert BlockedResourceRegistry.get_active_for_issue(issue_id, server: registry_name) == nil
+  end
+
   test "orchestrator snapshot reflects generic agent updates while preserving codex aliases" do
     issue_id = "issue-agent-snapshot"
 

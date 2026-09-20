@@ -85,6 +85,11 @@ defmodule SymphonyElixir.RepoTest do
     assert {:ok, "feature/tapd-42"} = Repo.working_branch("TAPD 42", work_prefix: "feature")
     assert {:ok, "release/work/issue-99"} = Repo.working_branch("Issue #99", work_prefix: "refs/heads/release/work")
 
+    assert Repo.work_prefix(work_prefix: "refs/heads/release/work/") == "release/work"
+    assert Repo.matches_work_prefix?("release/work/issue-99", work_prefix: "refs/heads/release/work")
+    refute Repo.matches_work_prefix?("release/issue-99", work_prefix: "refs/heads/release/work")
+    refute Repo.matches_work_prefix?("release/work/", work_prefix: "refs/heads/release/work")
+
     assert {:error, %Error{code: :invalid_invocation, operation: :working_branch, exit_code: 64}} =
              Repo.working_branch("   ")
   end

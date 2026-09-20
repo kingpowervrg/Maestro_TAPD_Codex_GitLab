@@ -5,12 +5,13 @@ usage() {
   cat <<'EOF'
 Usage:
   repo-full-checkout validate-reference <repository-path> <expected-remote-url>
-  repo-full-checkout materialize <repository-path> <remote-url> <target-path> <branch>
+  repo-full-checkout materialize <repository-path> <remote-url> <target-path> <branch> [path1;path2]
   repo-full-checkout install-agent-context <project-root> <workspace-root>
 
 Validates a complete local Git reference repository, materializes an independent
-task checkout from it before fetching the requested remote branch, or exposes
-repository-owned agent guidance and skills before Codex starts.
+task checkout from it before fetching the requested remote branch, optionally
+using sparse checkout paths, or exposes repository-owned agent guidance and
+skills before Codex starts.
 EOF
 }
 
@@ -30,6 +31,58 @@ validate_argument() {
   case "$value" in
     *$'\n'*|*$'\r'*) fail "$label must not contain newlines" ;;
   esac
+}
+
+trim_path() {
+  path="$1"
+  path="${path#"${path%%[![:space:]]*}"}"
+  path="${path%"${path##*[![:space:]]}"}"
+  printf '%s' "$path"
+}
+
+validate_sparse_path() {
+  path="$1"
+
+  [ -n "$path" ] || fail "Sparse checkout paths must not contain empty entries"
+
+  case "$path" in
+    /*|.|./*|../*|*/../*|*/..|-*)
+      fail "Sparse checkout paths must be safe repository-relative directories: $path"
+      ;;
+    *$'\n'*|*$'\r'*|*\\*)
+      fail "Sparse checkout paths must not contain newlines, NULs, or backslashes: $path"
+      ;;
+  esac
+
+  IFS='/' read -r -a path_segments <<<"$path"
+  for path_segment in "${path_segments[@]}"; do
+    case "$path_segment" in
+      ""|"."|"..")
+        fail "Sparse checkout paths must be safe repository-relative directories: $path"
+        ;;
+    esac
+  done
+}
+
+parse_sparse_paths() {
+  sparse_path_spec="$1"
+  sparse_paths=()
+
+  sparse_path_spec="$(trim_path "$sparse_path_spec")"
+  [ -n "$sparse_path_spec" ] || return 0
+
+  case "$sparse_path_spec" in
+    ';'*|*';') fail "Sparse checkout paths must not contain empty entries" ;;
+  esac
+
+  IFS=';' read -r -a raw_sparse_paths <<<"$sparse_path_spec"
+  for raw_sparse_path in "${raw_sparse_paths[@]}"; do
+    sparse_path="$(trim_path "$raw_sparse_path")"
+    validate_sparse_path "$sparse_path"
+    sparse_paths+=("$sparse_path")
+  done
+
+  [ "${#sparse_paths[@]}" -gt 0 ] || fail "Sparse checkout paths must not be empty"
 }
 
 validate_reference() {
@@ -69,6 +122,7 @@ materialize() {
   remote_url="$2"
   target_path="$3"
   branch="$4"
+  sparse_path_spec="${5:-}"
 
   validate_argument "$reference_repo" "repository path"
   validate_argument "$remote_url" "remote URL"
@@ -82,6 +136,8 @@ materialize() {
 
   git check-ref-format "refs/heads/$branch" >/dev/null 2>&1 ||
     fail "Invalid task checkout branch: $branch"
+
+  parse_sparse_paths "$sparse_path_spec"
 
   [ ! -e "$target_path" ] || fail "Task checkout target already exists: $target_path" 74
   initializing_path="${target_path}.initializing.$$"
@@ -101,8 +157,15 @@ materialize() {
   # objects before the complete working tree is populated.
   GIT_LFS_SKIP_SMUDGE=1 git clone --shared --no-checkout -- "$reference_repo" "$initializing_path"
   git -C "$initializing_path" remote set-url origin "$remote_url"
-  GIT_LFS_SKIP_SMUDGE=1 GIT_TERMINAL_PROMPT=0 git -C "$initializing_path" fetch --no-tags origin \
-    "+refs/heads/$branch:refs/remotes/origin/$branch"
+  if [ "${#sparse_paths[@]}" -gt 0 ]; then
+    GIT_LFS_SKIP_SMUDGE=1 GIT_TERMINAL_PROMPT=0 git -C "$initializing_path" fetch \
+      --no-tags --filter=blob:none origin \
+      "+refs/heads/$branch:refs/remotes/origin/$branch"
+    git -C "$initializing_path" sparse-checkout set --no-cone -- "${sparse_paths[@]}"
+  else
+    GIT_LFS_SKIP_SMUDGE=1 GIT_TERMINAL_PROMPT=0 git -C "$initializing_path" fetch --no-tags origin \
+      "+refs/heads/$branch:refs/remotes/origin/$branch"
+  fi
   GIT_LFS_SKIP_SMUDGE=1 git -C "$initializing_path" checkout --force -B "$branch" \
     --track "refs/remotes/origin/$branch"
   mv -- "$initializing_path" "$target_path"
@@ -181,8 +244,8 @@ case "$1" in
     validate_reference "$2" "$3"
     ;;
   materialize)
-    [ "$#" -eq 5 ] || { usage >&2; exit 64; }
-    materialize "$2" "$3" "$4" "$5"
+    [ "$#" -ge 5 ] && [ "$#" -le 6 ] || { usage >&2; exit 64; }
+    materialize "$2" "$3" "$4" "$5" "${6:-}"
     ;;
   install-agent-context)
     [ "$#" -eq 3 ] || { usage >&2; exit 64; }

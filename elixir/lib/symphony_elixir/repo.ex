@@ -89,6 +89,12 @@ defmodule SymphonyElixir.Repo do
   @spec working_branch(String.t(), keyword()) :: result(String.t())
   def working_branch(identifier, opts \\ []), do: Branch.working_branch(identifier, opts)
 
+  @spec work_prefix(keyword()) :: String.t()
+  def work_prefix(opts \\ []), do: Branch.work_prefix(opts)
+
+  @spec matches_work_prefix?(String.t(), keyword()) :: boolean()
+  def matches_work_prefix?(branch, opts \\ []), do: Branch.matches_work_prefix?(branch, opts)
+
   @spec clean?(Path.t(), keyword()) :: result(boolean())
   def clean?(path \\ ".", opts \\ []) do
     case status(path, opts) do

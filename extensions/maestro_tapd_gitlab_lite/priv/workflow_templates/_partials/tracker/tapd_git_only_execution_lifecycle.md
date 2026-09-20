@@ -13,16 +13,22 @@ are human-owned or stopped states and are deliberately absent from
    Story's `代码分支` field{% else %}`origin/{{ repo.base_branch }}` because the
    Story has no explicit development branch{% endif %} as the development
    base. Synchronize that ref with the repo-core helper when needed, then use
-   `repo_checkout` with canonical mode `create_or_switch` and explicit base
+   `repo_checkout` with canonical mode `create_or_switch`,
+   `identifier: "{{ issue.identifier }}"`, no explicit `branch`, and explicit base
    {% if issue.branch_name %}`origin/{{ issue.branch_name }}`{% else %}`origin/{{ repo.base_branch }}`{% endif %}
    to create a Story-specific branch without configured-base synchronization
-   in that checkout call. Confirm the working branch is neither the development
-   base nor final integration branch `{{ repo.base_branch }}` and follows the
-   configured work prefix before any commit or push.
+   in that checkout call. Let repo-core derive the working branch from the
+   identifier and configured work prefix; never invent a branch name or pass
+   both `identifier` and `branch`. Confirm the working branch is neither the
+   development base nor final integration branch `{{ repo.base_branch }}` and
+   follows the configured work prefix before any commit or push.
 4. Repository materialization follows `AI模型等级`. `high` and `xhigh` use a
-   local-first complete checkout borrowed from the configured reference
-   repository, followed by a fetch of only the requested remote branch delta;
-   repository-owned `AGENTS.md` guidance and skills are installed before Codex
+   local-first checkout borrowed from the configured reference repository,
+   followed by a fetch of only the requested remote branch delta. When
+   `SOURCE_REPO_PULL_PATHS` is configured, only those repository-relative
+   directories and their descendants are materialized through sparse checkout;
+   when it is empty, the complete checkout working tree is materialized.
+   Repository-owned `AGENTS.md` guidance and skills are installed before Codex
    starts. Read and follow the generated workspace-root `AGENTS.md`, do not call
    `repo_sparse_add`, and use local search inside the configured project root.
    `low` and `medium` use the blobless sparse checkout and sparse index. In that

@@ -17,4 +17,10 @@ defmodule MaestroTapdGitlabLite.ManifestTest do
     assert template =~ "bug_ai_model_level:"
     assert template =~ "field: $TAPD_BUG_AI_MODEL_LEVEL_FIELD"
   end
+
+  test "allows Codex app-server startup on large repositories" do
+    template = File.read!("priv/workflow_templates/tapd/git/codex.md")
+
+    assert template =~ "read_timeout_ms: 30000"
+  end
 end

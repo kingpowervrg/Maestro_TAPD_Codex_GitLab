@@ -81,6 +81,71 @@ defmodule MaestroTapdGitlabLite.RepoBootstrap.FullCheckoutTest do
     refute File.exists?(Path.join(task_checkout, ".git/shallow"))
   end
 
+  test "materializes only configured directories and their descendants" do
+    root = tmp_dir!("partial-full-checkout")
+    remote = Path.join(root, "remote.git")
+    seed = Path.join(root, "seed")
+    reference = Path.join(root, "master-reference")
+    task_checkout = Path.join(root, "task-checkout")
+
+    run!("git", ["init", "--bare", remote])
+    run!("git", ["clone", remote, seed])
+    run!("git", ["-C", seed, "config", "user.name", "Maestro Test"])
+    run!("git", ["-C", seed, "config", "user.email", "maestro@example.invalid"])
+    File.mkdir_p!(Path.join(seed, "Game/.agents"))
+    File.mkdir_p!(Path.join(seed, "Game/Assets/_Script/Nested"))
+    File.mkdir_p!(Path.join(seed, "Game/Assets/Textures"))
+    File.write!(Path.join(seed, "Game/.agents/AGENTS.md"), "rules\n")
+    File.write!(Path.join(seed, "Game/Assets/_Script/Nested/code.cs"), "code\n")
+    File.write!(Path.join(seed, "Game/Assets/Textures/large.bin"), "texture\n")
+    run!("git", ["-C", seed, "add", "."])
+    run!("git", ["-C", seed, "commit", "-m", "Game project"])
+    run!("git", ["-C", seed, "push", "origin", "HEAD:master"])
+    run!("git", ["-C", remote, "config", "uploadpack.allowFilter", "true"])
+    run!("git", ["clone", "--branch", "master", remote, reference])
+
+    run!(@helper, [
+      "materialize",
+      reference,
+      remote,
+      "task-checkout",
+      "master",
+      "Game/.agents;Game/Assets/_Script"
+    ], cd: root)
+
+    assert File.read!(Path.join(task_checkout, "Game/.agents/AGENTS.md")) == "rules\n"
+    assert File.read!(Path.join(task_checkout, "Game/Assets/_Script/Nested/code.cs")) == "code\n"
+    refute File.exists?(Path.join(task_checkout, "Game/Assets/Textures/large.bin"))
+    refute File.exists?(Path.join(task_checkout, "README.md"))
+    assert String.trim(run!("git", ["-C", task_checkout, "config", "--bool", "core.sparseCheckout"])) == "true"
+    assert String.trim(run!("git", ["-C", task_checkout, "config", "--get", "remote.origin.promisor"])) == "true"
+  end
+
+  test "rejects unsafe or empty sparse checkout path entries" do
+    root = tmp_dir!("partial-full-checkout-invalid-path")
+    reference = Path.join(root, "reference")
+
+    run!("git", ["init", "-b", "master", reference])
+
+    assert {output, 64} =
+             System.cmd(
+               @helper,
+               ["materialize", reference, "unused", "repo", "master", "Game/../Secrets"],
+               stderr_to_stdout: true
+             )
+
+    assert output =~ "safe repository-relative"
+
+    assert {output, 64} =
+             System.cmd(
+               @helper,
+               ["materialize", reference, "unused", "repo", "master", "Game/.agents;"],
+               stderr_to_stdout: true
+             )
+
+    assert output =~ "empty entries"
+  end
+
   test "rejects unsafe task checkout targets and invalid branches" do
     root = tmp_dir!("full-checkout-invalid-target")
     reference = Path.join(root, "reference")

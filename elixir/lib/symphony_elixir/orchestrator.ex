@@ -18,6 +18,7 @@ defmodule SymphonyElixir.Orchestrator do
   alias SymphonyElixir.Orchestrator.State
   alias SymphonyElixir.Orchestrator.TerminalCleanup
   alias SymphonyElixir.Orchestrator.WorkerExit
+  alias SymphonyElixir.Tracker
 
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts \\ []) do
@@ -31,6 +32,7 @@ defmodule SymphonyElixir.Orchestrator do
 
     state = State.initial()
     :ok = TerminalCleanup.run(terminal_cleanup_opts(opts))
+    :ok = release_legacy_operator_stop_blocks()
     state = PollCycle.schedule_initial_poll(state, opts)
 
     {:ok, state}
@@ -130,24 +132,18 @@ defmodule SymphonyElixir.Orchestrator do
         {:reply, {:error, :not_running}, state}
 
       running_entry ->
-        case register_operator_stop(issue_id, running_entry, opts) do
-          {:ok, _record} ->
-            state = Termination.terminate_running_issue(state, issue_id, false, ServerOptions.running_opts(state))
-
-            Events.emit(:warning, :issue_operator_stopped, Map.get(running_entry, :issue), state, %{
-              issue_id: issue_id,
-              issue_identifier: Map.get(running_entry, :identifier),
-              run_id: Map.get(running_entry, :run_id),
-              session_id: Map.get(running_entry, :session_id),
-              result_summary: "operator_stopped",
-              message: "issue_operator_stopped issue_id=#{issue_id} issue_identifier=#{Map.get(running_entry, :identifier) || issue_id}"
-            })
-
+        case operator_stop_result(issue_id, opts) do
+          :ok ->
+            state = terminate_operator_stopped_issue(state, issue_id)
+            emit_operator_stopped(running_entry, issue_id, state)
             ServerOptions.notify_dashboard()
             {:reply, :ok, state}
 
-          {:error, reason} ->
-            {:reply, {:error, {:operator_stop_block_failed, reason}}, state}
+          :unhandled ->
+            stop_with_dispatch_block(state, issue_id, running_entry, opts)
+
+          {:error, _reason} ->
+            stop_with_dispatch_block(state, issue_id, running_entry, opts)
         end
     end
   end
@@ -188,6 +184,41 @@ defmodule SymphonyElixir.Orchestrator do
 
   def stop_running_issue(_issue_id, _opts), do: {:error, :invalid_issue_id}
 
+  defp operator_stop_result(issue_id, opts) do
+    case Keyword.get(opts, :operator_stop, :unhandled) do
+      callback when is_function(callback, 1) -> callback.(issue_id)
+      _other -> :unhandled
+    end
+  end
+
+  defp terminate_operator_stopped_issue(state, issue_id) do
+    Termination.terminate_running_issue(state, issue_id, false, ServerOptions.running_opts(state))
+  end
+
+  defp stop_with_dispatch_block(state, issue_id, running_entry, opts) do
+    case register_operator_stop(issue_id, running_entry, opts) do
+      {:ok, _record} ->
+        state = terminate_operator_stopped_issue(state, issue_id)
+        emit_operator_stopped(running_entry, issue_id, state)
+        ServerOptions.notify_dashboard()
+        {:reply, :ok, state}
+
+      {:error, reason} ->
+        {:reply, {:error, {:operator_stop_block_failed, reason}}, state}
+    end
+  end
+
+  defp emit_operator_stopped(running_entry, issue_id, state) do
+    Events.emit(:warning, :issue_operator_stopped, Map.get(running_entry, :issue), state, %{
+      issue_id: issue_id,
+      issue_identifier: Map.get(running_entry, :identifier),
+      run_id: Map.get(running_entry, :run_id),
+      session_id: Map.get(running_entry, :session_id),
+      result_summary: "operator_stopped",
+      message: "issue_operator_stopped issue_id=#{issue_id} issue_identifier=#{Map.get(running_entry, :identifier) || issue_id}"
+    })
+  end
+
   defp register_operator_stop(issue_id, running_entry, opts) do
     BlockedResourceRegistry.register(
       %{
@@ -201,5 +232,17 @@ defmodule SymphonyElixir.Orchestrator do
       },
       server: Keyword.get(opts, :blocked_resource_registry, BlockedResourceRegistry)
     )
+  end
+
+  defp release_legacy_operator_stop_blocks do
+    if Tracker.operator_stop_policy_available?() do
+      BlockedResourceRegistry.snapshot()
+      |> Enum.filter(&(&1["status"] == "active" and &1["blocker_code"] == "operator_stopped"))
+      |> Enum.each(fn %{"resource" => %{"kind" => kind, "id" => id}} ->
+        BlockedResourceRegistry.release(kind, id, :operator_stop_policy_migration)
+      end)
+    end
+
+    :ok
   end
 end
