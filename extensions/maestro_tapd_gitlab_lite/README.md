@@ -28,3 +28,12 @@ those two assembly registrations to run Maestro Core without the extension.
 The manifest requires Core contract version 1. The TAPD policy and repository
 backend are deliberately separate so a future upstream GitLab provider can
 replace the backend without changing company field semantics.
+
+## Workpad formatting
+
+The Lite Workpad contract keeps headings and prose in normal Markdown while
+using Markdown inline code for important identifiers and values. TAPD renders
+those inline-code spans as the red emphasis used by the established Workpad
+style, including for paths, branches, SHAs, commands, field values, and tool
+names. The formatting rule is defined in
+`priv/workflow_templates/_partials/tracker/tapd_git_only_workpad_contract.md`.

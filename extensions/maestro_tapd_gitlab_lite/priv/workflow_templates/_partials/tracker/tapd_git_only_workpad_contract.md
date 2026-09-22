@@ -10,6 +10,18 @@
 - Preserve the published working branch across rework rounds. The latest completed round's `branch_name` and `published_head_sha` are the authoritative resume point.
 - The final checked AI workflow item is written by `tracker.complete_ai_workflow` only after TAPD read-back confirms `AI特殊工作流=AI已解决`; do not pre-check it with a standalone workpad update.
 
+Formatting convention for TAPD presentation:
+
+- Keep headings and explanatory prose as normal Markdown text.
+- Wrap important identifiers and values in Markdown inline code so TAPD renders
+  them as the red emphasis used in the existing Workpad style: field names and
+  values, repository paths, branch names, commit/published SHAs, commands,
+  status values, and tool names. For example:
+  `AI特殊工作流=AI已解决`, `origin/main`, `git diff --check`, and
+  `published_head_sha`.
+- Do not use HTML or CSS for emphasis; the typed tracker tools preserve the
+  Markdown body and the TAPD client performs the platform-specific conversion.
+
 Use this structure for the persistent workpad comment and its local mirror:
 
 ````md
