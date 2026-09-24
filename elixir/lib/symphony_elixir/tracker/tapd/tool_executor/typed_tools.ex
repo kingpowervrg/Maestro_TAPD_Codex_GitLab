@@ -250,7 +250,8 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
           "additionalProperties" => false,
           "required" => ["issue_id", "workpad_id", "body"],
           "properties" => %{
-            "issue_id" => %{"type" => "string", "description" => "Full TAPD Bug id or TAPD-<id> identifier."},
+            "issue_id" => %{"type" => "string", "description" => "Full TAPD Story or Bug id or TAPD-<id> identifier."},
+            "entity_type" => %{"type" => ["string", "null"], "enum" => ["story", "bug", nil], "description" => "Optional TAPD entity type; inferred from the issue when omitted."},
             "workpad_id" => %{"type" => "string", "description" => "Canonical workpad id returned by tapd_issue_snapshot."},
             "body" => %{
               "type" => "string",
@@ -495,9 +496,9 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
            IssuePolicyRuntime.complete(tracker, %{
              issue: issue,
              fetch_issue: fn -> fetch_issue(tracker, args.issue_id, opts) end,
-             update_fields: fn fields -> update_issue_fields(tracker, issue.id, fields, opts) end
+             update_fields: fn fields -> update_issue_fields(tracker, issue, fields, opts) end
            }),
-         {:ok, comment} <- finalize_ai_workflow_workpad(tracker, args, opts) do
+         {:ok, comment} <- finalize_ai_workflow_workpad(tracker, args, issue.entity_type, opts) do
       {:success, success_payload(%{"issue" => completed_issue_payload(completion), "comment" => comment})}
     else
       {:error, reason} -> typed_failure(reason)
@@ -505,22 +506,26 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
   end
 
   defp validate_ai_workflow_completion_readiness(%Issue{} = issue, issue_id, opts) do
-    args = %{state_name: "review", issue_id: normalize_issue_id(issue_id)}
-
-    if StateTransitionReadiness.governed_target?(issue.workflow, args.state_name) do
-      StateTransitionReadiness.validate(issue.workflow, issue, transition_readiness_opts(args, opts))
-    else
+    if issue.entity_type != "bug" do
       :ok
+    else
+      args = %{state_name: "review", issue_id: normalize_issue_id(issue_id)}
+
+      if StateTransitionReadiness.governed_target?(issue.workflow, args.state_name) do
+        StateTransitionReadiness.validate(issue.workflow, issue, transition_readiness_opts(args, opts))
+      else
+        :ok
+      end
     end
   end
 
-  defp finalize_ai_workflow_workpad(tracker, args, opts) do
+  defp finalize_ai_workflow_workpad(tracker, args, entity_type, opts) do
     upsert_workpad_comment(
       tracker,
       %{
         issue_id: args.issue_id,
         body: args.body,
-        entity_type: "bug",
+        entity_type: entity_type,
         workpad_id: args.workpad_id,
         mode: "replace"
       },
@@ -539,10 +544,12 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
     }
   end
 
-  defp update_issue_fields(tracker, issue_id, fields, opts) when is_map(fields) do
+  defp update_issue_fields(tracker, %Issue{} = issue, fields, opts) when is_map(fields) do
+    path = if issue.entity_type == "story", do: Paths.stories(), else: Paths.bugs()
+
     with {:ok, response} <-
-           request(tracker, "POST", Paths.bugs(), Map.put(fields, "id", issue_id), opts),
-         {:ok, _data} <- Response.decode_success_envelope(Paths.bugs(), response) do
+           request(tracker, "POST", path, Map.put(fields, "id", issue.id), opts),
+         {:ok, _data} <- Response.decode_success_envelope(path, response) do
       :ok
     end
   end

@@ -205,38 +205,45 @@ defmodule SymphonyElixir.Tracker.Tapd.Adapter do
     %{
       issue: issue,
       fetch_issue: fn -> fetch_policy_issue(tracker, issue_id, opts) end,
-      update_fields: fn fields -> update_policy_fields(tracker, issue.id, fields, opts) end
+      update_fields: fn fields -> update_policy_fields(tracker, issue, fields, opts) end
     }
   end
 
   defp fetch_policy_issue(tracker, issue_id, opts) do
     normalized_issue_id = normalize_issue_id(tracker, issue_id)
 
-    case Client.fetch_bugs_by_ids([normalized_issue_id],
-           tracker: tracker,
-           request_fun: Keyword.get(opts, :request_fun, &Client.Request.default_request/1)
-         ) do
+    request_fun = Keyword.get(opts, :request_fun, &Client.Request.default_request/1)
+
+    case Client.fetch_bugs_by_ids([normalized_issue_id], tracker: tracker, request_fun: request_fun) do
       {:ok, [%Issue{} = issue | _rest]} ->
         {:ok, issue}
 
       {:ok, []} ->
-        {:error, {:not_found, "TAPD issue #{normalized_issue_id} was not found before applying its failure policy."}}
+        fetch_story_policy_issue(tracker, normalized_issue_id, request_fun)
 
-      {:error, reason} ->
-        {:error, reason}
+      {:error, _reason} ->
+        fetch_story_policy_issue(tracker, normalized_issue_id, request_fun)
     end
   end
 
-  defp update_policy_fields(tracker, issue_id, fields, opts) when is_map(fields) do
-    params = Map.put(fields, "id", issue_id)
+  defp fetch_story_policy_issue(tracker, issue_id, request_fun) do
+    case Client.fetch_stories_by_ids([issue_id], tracker: tracker, request_fun: request_fun) do
+      {:ok, [%Issue{} = issue | _rest]} -> {:ok, issue}
+      {:ok, []} -> {:error, {:not_found, "TAPD issue #{issue_id} was not found before applying its failure policy."}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp update_policy_fields(tracker, issue, fields, opts) when is_map(fields) do
+    path = if issue.entity_type == "story", do: Paths.stories(), else: Paths.bugs()
     request_fun = Keyword.get(opts, :request_fun, &Client.Request.default_request/1)
 
     with {:ok, response} <-
-           Client.Request.request("POST", Paths.bugs(), params,
+           Client.Request.request("POST", path, Map.put(fields, "id", issue.id),
              tracker: tracker,
              request_fun: request_fun
            ),
-         {:ok, _data} <- Client.Response.decode_success_envelope(Paths.bugs(), response) do
+         {:ok, _data} <- Client.Response.decode_success_envelope(path, response) do
       :ok
     end
   end

@@ -244,7 +244,7 @@ Instructions:
 1. This is an unattended session. Follow the resolved route policy and stop for
    a true blocker instead of asking for interactive setup.
 2. The automation boundary ends after a working-branch push, remote SHA
-   verification, TAPD workpad handoff, and {% if issue.entity_type == "bug" %}changing `AI特殊工作流` to `AI已解决`{% else %}transition to human review{% endif %}.
+   verification, TAPD workpad handoff, and changing `AI特殊工作流` to `AI已解决`.
    Base the working branch on the work item development base above. Treat that
    explicit work item branch as authoritative for implementation; it is not a
    conflict with the final integration branch.
@@ -254,6 +254,7 @@ Instructions:
 4. Work only in `repo/`. The sole normal workspace-root artifact you may update
    is `.symphony-tapd-workpad.md`.
 5. Final output must report completed actions and blockers only.
+   Completion includes typed-tool read-back (`read the Bug back` or the Story equivalent).
 
 ## TAPD Access And Tools
 

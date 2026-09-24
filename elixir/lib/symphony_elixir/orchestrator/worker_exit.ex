@@ -274,7 +274,8 @@ defmodule SymphonyElixir.Orchestrator.WorkerExit do
     complete_issue(state, issue_id)
   end
 
-  defp mark_issue_workflow_exception(%Issue{entity_type: "bug"} = issue, issue_id, running_entry, reason, opts) do
+  defp mark_issue_workflow_exception(%Issue{entity_type: entity_type} = issue, issue_id, running_entry, reason, opts)
+       when entity_type in ["bug", "story"] do
     mark_exception = Keyword.get(opts, :mark_ai_workflow_exception, fn _issue_id -> :ok end)
 
     case mark_exception.(issue_id) do

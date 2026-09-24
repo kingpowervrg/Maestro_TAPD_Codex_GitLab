@@ -74,21 +74,14 @@ defmodule MaestroTapdGitlabLite.Tracker.CompanyTapdIssuePolicy do
   end
 
   @impl true
-  def complete(%{issue: %{entity_type: "story"}} = context) when is_map(context),
-    do: {:ok, context}
-
   def complete(context) when is_map(context),
     do: MaestroTapdGitlabLite.Tracker.PolicyLifecycle.complete(context)
 
   @impl true
-  def handle_failure(%{issue: %{entity_type: "story"}}), do: :ok
-
   def handle_failure(context) when is_map(context),
     do: MaestroTapdGitlabLite.Tracker.PolicyLifecycle.handle_failure(context)
 
   @impl true
-  def handle_operator_stop(%{issue: %{entity_type: "story"}}), do: :ok
-
   def handle_operator_stop(context) when is_map(context),
     do: MaestroTapdGitlabLite.Tracker.PolicyLifecycle.handle_failure(context)
 

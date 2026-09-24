@@ -320,7 +320,8 @@ defmodule SymphonyElixir.Orchestrator.Retry.IssueHandler do
 
   defp emit_retry_exhaustion_comment_result(_result, _issue, _issue_id, _emit_event, _state, _metadata), do: :ok
 
-  defp mark_retry_exhaustion_exception(%Issue{entity_type: "bug"} = issue, issue_id, emit_event, state, metadata, opts) do
+  defp mark_retry_exhaustion_exception(%Issue{entity_type: entity_type} = issue, issue_id, emit_event, state, metadata, opts)
+       when entity_type in ["bug", "story"] do
     mark_exception = Keyword.get(opts, :mark_ai_workflow_exception)
 
     case mark_exception do
