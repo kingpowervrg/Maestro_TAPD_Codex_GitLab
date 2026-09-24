@@ -22,8 +22,8 @@ environment file:
 ```bash
 SOURCE_REPO_LOCAL_REFERENCE=/home/admin2/workspace_k1/master
 SOURCE_REPO_PROJECT_SUBDIR=Game
-# Optional for high/xhigh; paths are repository-relative and recursive.
-SOURCE_REPO_PULL_PATHS=Game/.agents,Game/.codex,Game/.cursor,Game/Assets/_Script,Game/Assets/Plugins
+# Optional for high/xhigh; use comma-separated sparse-checkout patterns.
+SOURCE_REPO_PULL_PATHS=Game/.agents,Game/.codex,Game/.cursor,Game/Assets/_Script/*.cs,Game/Assets/_Script/**/*.cs,Game/Docs,Game/AGENTS.md,Game/openspec
 ```
 
 `SOURCE_REPO_LOCAL_REFERENCE` must be a non-shallow, non-sparse, non-partial Git

@@ -15,11 +15,11 @@ defmodule MaestroTapdGitlabLite.Tracker.CompanyTapdIssuePolicy do
     do: tracker_kind(tracker) in [nil, "tapd"] and PolicyConfig.enabled?(tracker)
 
   @impl true
-  def candidate_scope("bug", tracker) do
+  def candidate_scope(entity_type, tracker) when entity_type in ["bug", "story"] do
     if supports?(tracker) do
       %{
-        states: PolicyConfig.active_states(tracker),
-        filters: %{PolicyConfig.workflow_field(tracker) => PolicyConfig.accepted_value(tracker)}
+        states: PolicyConfig.active_states(tracker, entity_type),
+        filters: policy_filters(tracker, entity_type)
       }
     end
   end
@@ -29,8 +29,9 @@ defmodule MaestroTapdGitlabLite.Tracker.CompanyTapdIssuePolicy do
   @impl true
   def enrich_issue(issue, %{tracker: tracker} = context) when is_map(issue) do
     raw_issue = Map.get(context, :raw_issue, %{})
-    workflow_value = PolicyConfig.field_value(raw_issue, PolicyConfig.workflow_field(tracker))
-    model_level = PolicyConfig.model_level(raw_issue, tracker)
+    entity_type = Map.get(issue, :entity_type, "bug")
+    workflow_value = PolicyConfig.field_value(raw_issue, PolicyConfig.workflow_field(tracker, entity_type))
+    model_level = PolicyConfig.model_level(raw_issue, tracker, entity_type)
 
     policy_fields = %{
       "workflow" => workflow_value,
@@ -52,8 +53,7 @@ defmodule MaestroTapdGitlabLite.Tracker.CompanyTapdIssuePolicy do
       |> Map.get(:agent_options, %{})
       |> Map.put(:reasoning_effort, model_level)
 
-    {:ok,
-     issue |> Map.put(:custom_fields, custom_fields) |> Map.put(:agent_options, agent_options)}
+    {:ok, issue |> Map.put(:custom_fields, custom_fields) |> Map.put(:agent_options, agent_options)}
   end
 
   @impl true
@@ -61,10 +61,12 @@ defmodule MaestroTapdGitlabLite.Tracker.CompanyTapdIssuePolicy do
     policy_fields = issue |> Map.get(:custom_fields, %{}) |> Map.get(id(), %{})
     workflow_value = Map.get(policy_fields, "workflow")
     state = issue |> Map.get(:state) |> normalize_string() |> downcase()
-    active_states = Enum.map(PolicyConfig.active_states(tracker), &downcase/1)
+    entity_type = Map.get(issue, :entity_type, "bug")
+    active_states = Enum.map(PolicyConfig.active_states(tracker, entity_type), &downcase/1)
 
-    if Map.get(issue, :entity_type) != "bug" or
-         (workflow_value == PolicyConfig.accepted_value(tracker) and state in active_states) do
+    allowed? = workflow_value == PolicyConfig.accepted_value(tracker) and state in active_states
+
+    if allowed? do
       :allow
     else
       {:deny, :company_tapd_policy_not_accepted}
@@ -72,18 +74,32 @@ defmodule MaestroTapdGitlabLite.Tracker.CompanyTapdIssuePolicy do
   end
 
   @impl true
+  def complete(%{issue: %{entity_type: "story"}} = context) when is_map(context),
+    do: {:ok, context}
+
   def complete(context) when is_map(context),
     do: MaestroTapdGitlabLite.Tracker.PolicyLifecycle.complete(context)
 
   @impl true
+  def handle_failure(%{issue: %{entity_type: "story"}}), do: :ok
+
   def handle_failure(context) when is_map(context),
     do: MaestroTapdGitlabLite.Tracker.PolicyLifecycle.handle_failure(context)
 
   @impl true
+  def handle_operator_stop(%{issue: %{entity_type: "story"}}), do: :ok
+
   def handle_operator_stop(context) when is_map(context),
     do: MaestroTapdGitlabLite.Tracker.PolicyLifecycle.handle_failure(context)
 
   defp tracker_kind(tracker), do: field(tracker, :kind)
+
+  defp policy_filters(tracker, entity_type) do
+    case PolicyConfig.workflow_field(tracker, entity_type) do
+      field when is_binary(field) -> %{field => PolicyConfig.accepted_value(tracker)}
+      _ -> %{}
+    end
+  end
 
   defp field(map, key) when is_map(map),
     do: Map.get(map, key) || Map.get(map, Atom.to_string(key))

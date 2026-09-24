@@ -23,7 +23,7 @@ defmodule SymphonyElixir.Tracker.Tapd.Client.Reader do
 
         _issue_ids ->
           with state_names when is_list(state_names) <- TrackerConfig.active_states(tracker),
-               {:ok, stories} <- fetch_stories_by_status(state_names, reader_opts),
+               {:ok, stories} <- fetch_candidate_stories(tracker, state_names, reader_opts),
                {:ok, bugs} <- maybe_fetch_candidate_bugs(tracker, reader_opts) do
             {:ok, stories ++ bugs}
           else
@@ -33,6 +33,16 @@ defmodule SymphonyElixir.Tracker.Tapd.Client.Reader do
       end
 
     Errors.map_result(result, :fetch_candidate_issues)
+  end
+
+  defp fetch_candidate_stories(tracker, state_names, opts) do
+    case IssuePolicyRuntime.candidate_scope("story", tracker) do
+      %{states: states, filters: filters} when is_list(states) and is_map(filters) ->
+        fetch_stories_by_status(states, Keyword.put(opts, :policy_filters, filters))
+
+      _scope ->
+        fetch_stories_by_status(state_names, opts)
+    end
   end
 
   @spec fetch_issues_by_states([String.t()], map(), keyword()) :: {:ok, [Issue.t()]} | {:error, term()}
@@ -69,18 +79,35 @@ defmodule SymphonyElixir.Tracker.Tapd.Client.Reader do
 
   @spec fetch_stories_by_status([String.t()], keyword()) :: {:ok, [Issue.t()]} | {:error, term()}
   def fetch_stories_by_status(state_names, opts \\ [])
-      when is_list(state_names) and is_list(opts) do
+      when (is_list(state_names) or state_names == :all) and is_list(opts) do
     tracker = Keyword.fetch!(opts, :tracker)
     operation = Keyword.get(opts, :operation, :fetch_issues_by_states)
     request_fun = Keyword.get(opts, :request_fun, &Request.default_request/1)
 
     statuses =
-      state_names
-      |> Enum.map(&Fields.normalize_string/1)
-      |> Enum.reject(&is_nil/1)
+      if state_names == :all do
+        []
+      else
+        state_names
+        |> Enum.map(&Fields.normalize_string/1)
+        |> Enum.reject(&is_nil/1)
+      end
 
     result =
-      case statuses do
+      case state_names do
+        :all ->
+          with {:ok, issues} <-
+                 do_fetch_stories_by_status(
+                   tracker,
+                   nil,
+                   1,
+                   [],
+                   [],
+                   request_fun
+                 ) do
+            maybe_enrich_issues(issues, tracker, request_fun, opts)
+          end
+
         [] ->
           {:ok, []}
 
@@ -193,11 +220,8 @@ defmodule SymphonyElixir.Tracker.Tapd.Client.Reader do
          request_fun
        ) do
     params =
-      %{
-        "status" => status_filter,
-        "page" => page,
-        "limit" => @page_limit
-      }
+      %{"page" => page, "limit" => @page_limit}
+      |> maybe_put_status(status_filter)
       |> maybe_put_workitem_type_id(WorkflowConfig.request_workitem_type_id(tracker))
       |> maybe_put_assignee(ProviderOptions.assignee(tracker))
 
@@ -232,6 +256,9 @@ defmodule SymphonyElixir.Tracker.Tapd.Client.Reader do
       end
     end
   end
+
+  defp maybe_put_status(params, status) when is_binary(status), do: Map.put(params, "status", status)
+  defp maybe_put_status(params, _status), do: params
 
   defp do_fetch_stories_by_ids(issue_ids, tracker, request_fun) do
     issue_ids

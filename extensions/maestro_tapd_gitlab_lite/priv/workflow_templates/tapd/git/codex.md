@@ -18,6 +18,7 @@ tracker:
     platform:
       workspace_id: $TAPD_WORKSPACE_ID
       comment_author: $TAPD_COMMENT_AUTHOR
+      allow_state_updates: false
       bug_ai_workflow:
         field: $TAPD_BUG_AI_WORKFLOW_FIELD
         accepted_value: 接受/处理
@@ -26,16 +27,22 @@ tracker:
         active_states: [new, reopened]
       bug_ai_model_level:
         field: $TAPD_BUG_AI_MODEL_LEVEL_FIELD
+      task_ai_workflow:
+        field: $TAPD_TASK_AI_WORKFLOW_FIELD
+        accepted_value: 接受/处理
+        active_states: [status_4, status_10]
+      task_ai_model_level:
+        field: $TAPD_TASK_AI_MODEL_LEVEL_FIELD
   lifecycle:
     active_states:
       - status_4
-      - developing
+      - status_10
     terminal_states:
       - status_6
       - status_8
     state_phase_map:
       status_4: todo
-      developing: in_progress
+      status_10: in_progress
       status_5: human_review
       merging: merging
       rework: rework
@@ -43,12 +50,14 @@ tracker:
       status_8: done
     raw_state_by_route_key:
       planning: status_4
-      developing: developing
+      developing: status_10
       review: status_5
       merging: merging
       rework: rework
       resolved: status_6
     policy_by_route_key:
+      planning:
+        action: dispatch
       merging:
         action: wait
       rework:
@@ -101,7 +110,7 @@ hooks:
           exit 64
         fi
         pull_paths="${SOURCE_REPO_PULL_PATHS:-}"
-        if [ -n "${pull_paths//[[:space:]]/}" ]; then
+        if [ -n "$(printf '%s' "$pull_paths" | tr -d '[:space:]')" ]; then
           printf '%s\n' partial-initializing > "$repo_materialization_file"
           printf '%s\n' "$pull_paths" > "$repo_materialization_paths_file"
           "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/bin/repo-full-checkout" materialize \
@@ -142,7 +151,7 @@ hooks:
     case "${SYMPHONY_AGENT_REASONING_EFFORT:-medium}" in
       high|xhigh)
         configured_pull_paths="${SOURCE_REPO_PULL_PATHS:-}"
-        if [ -n "${configured_pull_paths//[[:space:]]/}" ]; then
+        if [ -n "$(printf '%s' "$configured_pull_paths" | tr -d '[:space:]')" ]; then
           expected_repo_materialization_mode=partial
         else
           expected_repo_materialization_mode=full
@@ -210,9 +219,8 @@ Title: {{ issue.title }}
 Current status: {{ issue.state }}
 Entity type: {% if issue.entity_type %}{{ issue.entity_type }}{% else %}story{% endif %}
 Workitem type: {% if issue.workitem_type_id %}{{ issue.workitem_type_id }}{% else %}unknown{% endif %}
-{% if issue.entity_type == "bug" %}AI特殊工作流: {{ issue.custom_fields.ai_special_workflow }}
+AI特殊工作流: {{ issue.custom_fields.ai_special_workflow }}
 AI模型等级: {{ issue.custom_fields.ai_model_level }}
-{% endif %}
 Labels: {{ issue.labels }}
 URL: {{ issue.url }}
 

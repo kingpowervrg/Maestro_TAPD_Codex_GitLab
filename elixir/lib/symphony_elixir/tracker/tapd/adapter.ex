@@ -168,8 +168,19 @@ defmodule SymphonyElixir.Tracker.Tapd.Adapter do
   @spec update_issue_state(TrackerConfig.t(), String.t(), String.t(), keyword()) :: :ok | {:error, term()}
   def update_issue_state(tracker, issue_id, state_name, opts \\ [])
       when is_map(tracker) and is_binary(issue_id) and is_binary(state_name) do
-    with :ok <- confirm_expected_current_state(tracker, issue_id, opts) do
+    with :ok <- state_updates_enabled(tracker),
+         :ok <- confirm_expected_current_state(tracker, issue_id, opts) do
       Client.update_story_status(issue_id, state_name, Keyword.put(opts, :tracker, tracker))
+    end
+  end
+
+  defp state_updates_enabled(tracker) do
+    platform = provider_field(tracker, "platform")
+
+    case Map.get(platform, "allow_state_updates") do
+      false -> {:error, :state_updates_disabled}
+      "false" -> {:error, :state_updates_disabled}
+      _ -> :ok
     end
   end
 

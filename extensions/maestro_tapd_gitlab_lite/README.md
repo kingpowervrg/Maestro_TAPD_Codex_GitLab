@@ -5,14 +5,16 @@ GitLab Lite repository backend. Git writes use SSH. The only GitLab HTTP API
 capability is read-only blob search; merge requests, reviews, pipelines,
 approvals, and merges remain manual.
 
-For Bugs whose normalized `AI模型等级` is `high` or `xhigh`, the bundled
+For TAPD Bugs and Tasks, execution is opt-in: the item must be in an active
+state and have `AI特殊工作流=接受/处理`. Their normalized `AI模型等级`
+controls repository materialization; `high` or `xhigh` uses the bundled
 workflow uses `SOURCE_REPO_LOCAL_REFERENCE` as a fast local shared clone, then
 fetches only the requested GitLab branch delta. Set `SOURCE_REPO_PULL_PATHS` to
-a comma-separated list of repository-relative directories to expand only those
-directories recursively:
+a comma-separated list of Git sparse-checkout patterns. Positive patterns expand
+selected paths recursively; patterns beginning with `!` exclude matching paths:
 
 ```bash
-SOURCE_REPO_PULL_PATHS=Game/.agents,Game/.codex,Game/.cursor,Game/Assets/_Script,Game/Assets/Plugins
+SOURCE_REPO_PULL_PATHS=Game/.agents,Game/.codex,Game/.cursor,Game/Assets/_Script/*.cs,Game/Assets/_Script/**/*.cs,Game/Docs,Game/AGENTS.md,Game/openspec
 ```
 
 When `SOURCE_REPO_PULL_PATHS` is set, the task workspace uses sparse checkout

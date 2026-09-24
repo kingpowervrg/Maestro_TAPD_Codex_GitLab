@@ -843,7 +843,7 @@ defmodule SymphonyElixir.WorkflowTemplatesTest do
              "active_states" => ["new", "reopened"]
            }
 
-    assert settings.tracker.lifecycle["active_states"] == ["status_4", "developing"]
+    assert settings.tracker.lifecycle["active_states"] == ["status_4", "status_10"]
     assert settings.tracker.lifecycle["terminal_states"] == ["status_6", "status_8"]
 
     workflows_by_type = settings.tracker.lifecycle["workflows_by_type"]
@@ -860,6 +860,7 @@ defmodule SymphonyElixir.WorkflowTemplatesTest do
 
     assert get_in(config, ["tracker", "lifecycle", "policy_by_route_key"]) == %{
              "merging" => %{"action" => "wait"},
+             "planning" => %{"action" => "dispatch"},
              "rejected" => %{"action" => "disabled"},
              "rework" => %{"action" => "wait"}
            }

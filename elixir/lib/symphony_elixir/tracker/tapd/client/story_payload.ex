@@ -35,6 +35,7 @@ defmodule SymphonyElixir.Tracker.Tapd.Client.StoryPayload do
              )
 
          Normalizer.normalize_story(story,
+           tracker: tracker,
            assignee_filter: assignee_filter,
            workspace_url: workspace_url,
            state_phase_map: Map.get(workflow, :state_phase_map, %{}),

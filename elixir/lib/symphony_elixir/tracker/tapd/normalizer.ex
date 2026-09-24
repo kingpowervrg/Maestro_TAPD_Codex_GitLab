@@ -29,7 +29,7 @@ defmodule SymphonyElixir.Tracker.Tapd.Normalizer do
         Keyword.get(opts, :blocked_by, [])
       )
 
-    %Issue{
+    issue = %Issue{
       id: story_id,
       identifier: story_identifier(story_id),
       title: string_field(story, "name") || string_field(story, "title"),
@@ -44,11 +44,29 @@ defmodule SymphonyElixir.Tracker.Tapd.Normalizer do
       assignee_id: assignee_id(assignees),
       blocked_by: blocked_by,
       labels: extract_labels(story),
+      custom_fields: raw_custom_fields(story),
       workflow: workflow,
       assigned_to_worker: assigned_to_worker?(assignees, assignee_filter),
       created_at: parse_datetime(string_field(story, "created")),
       updated_at: parse_datetime(string_field(story, "modified") || string_field(story, "updated"))
     }
+
+    case Keyword.get(opts, :tracker) do
+      tracker when is_map(tracker) ->
+        case IssuePolicyRuntime.enrich_issue(issue, tracker, %{raw_issue: story}) do
+          {:ok, enriched} ->
+            case IssuePolicyRuntime.evaluate_dispatch(enriched, tracker) do
+              :allow -> enriched
+              {:deny, _reason} -> %{enriched | assigned_to_worker: false}
+            end
+
+          {:error, _reason} ->
+            %{issue | assigned_to_worker: false}
+        end
+
+      _ ->
+        issue
+    end
   end
 
   def normalize_story(_story, _opts), do: nil

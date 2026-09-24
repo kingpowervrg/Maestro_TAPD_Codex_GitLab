@@ -314,7 +314,8 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
   end
 
   defp move_issue(tracker, arguments, opts) do
-    with {:ok, args} <- move_issue_args(arguments),
+    with :ok <- state_updates_enabled(tracker),
+         {:ok, args} <- move_issue_args(arguments),
          {:ok, issue} <- fetch_issue(tracker, args.issue_id, opts),
          workflow <- workflow(issue),
          readiness_governed_target? <- StateTransitionReadiness.governed_target?(workflow, args.state_name),
@@ -325,6 +326,16 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
       {:success, success_payload(%{"issue" => moved_issue})}
     else
       {:error, reason} -> typed_failure(reason)
+    end
+  end
+
+  defp state_updates_enabled(tracker) do
+    platform = SymphonyElixir.Tracker.ConfigAccess.provider_field(tracker, "platform")
+
+    case Map.get(platform, "allow_state_updates") do
+      false -> {:error, :state_updates_disabled}
+      "false" -> {:error, :state_updates_disabled}
+      _ -> :ok
     end
   end
 
@@ -614,15 +625,23 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
   end
 
   defp upsert_workpad_comment(tracker, %{workpad_id: workpad_id} = args, opts) when is_binary(workpad_id) do
-    with {:ok, record} <- workpad_record_for_id(args.issue_id, workpad_id),
-         {:ok, provider_id} <- comment_provider_id(record) do
-      case update_comment(tracker, provider_id, args.body, opts) do
-        {:ok, comment} ->
-          {:ok, register_workpad_comment(args, comment, record)}
+    case WorkpadRegistry.get(@source_kind, normalize_issue_id(args.issue_id)) do
+      %{"id" => ^workpad_id} = record ->
+        case comment_provider_id(record) do
+          {:ok, provider_id} ->
+            case update_comment(tracker, provider_id, args.body, opts) do
+              {:ok, comment} -> {:ok, register_workpad_comment(args, comment, record)}
+              {:error, reason} -> maybe_recover_missing_workpad_comment(tracker, args, opts, reason)
+            end
 
-        {:error, reason} ->
-          maybe_recover_missing_workpad_comment(tracker, args, opts, reason)
-      end
+          _missing_provider_ref ->
+            with {:ok, comment} <- create_comment(tracker, args.issue_id, args.body, args.entity_type, opts) do
+              {:ok, register_workpad_comment(args, comment, record)}
+            end
+        end
+
+      _record ->
+        {:error, {:invalid_arguments, "Unknown workpad_id #{inspect(workpad_id)} for issue #{inspect(args.issue_id)}."}}
     end
   end
 
@@ -1234,7 +1253,12 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
         end
 
       _record ->
-        nil
+        %{
+          "id" => workpad_id(@source_kind, normalize_issue_id(args.issue_id)),
+          "provider" => @source_kind,
+          "issue_id" => normalize_issue_id(args.issue_id),
+          "status" => "unregistered"
+        }
     end
   end
 
@@ -1258,16 +1282,6 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
       id = Map.get(comment, "id") || Map.get(comment, "comment_id") || Map.get(comment, "commentId")
       to_string(id || "") == comment_id
     end)
-  end
-
-  defp workpad_record_for_id(issue_id, workpad_id) do
-    case WorkpadRegistry.get(@source_kind, normalize_issue_id(issue_id)) do
-      %{"id" => ^workpad_id} = record ->
-        {:ok, record}
-
-      _record ->
-        {:error, {:invalid_arguments, "Unknown workpad_id #{inspect(workpad_id)} for issue #{inspect(issue_id)}."}}
-    end
   end
 
   defp comment_provider_id(%{"provider_ref" => %{"type" => "comment", "id" => id}}) when is_binary(id), do: {:ok, id}
