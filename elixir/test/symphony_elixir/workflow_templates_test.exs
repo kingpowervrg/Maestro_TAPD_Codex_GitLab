@@ -885,7 +885,8 @@ defmodule SymphonyElixir.WorkflowTemplatesTest do
     assert after_create =~ "git -C repo sparse-checkout reapply --sparse-index"
     assert after_create =~ "SYMPHONY_ISSUE_BRANCH_NAME"
     assert after_create =~ "SYMPHONY_AGENT_REASONING_EFFORT"
-    assert after_create =~ "high|xhigh"
+    assert after_create =~ "xhigh)"
+    refute after_create =~ "high|xhigh"
     assert after_create =~ "SOURCE_REPO_LOCAL_REFERENCE"
     assert after_create =~ "SOURCE_REPO_PROJECT_SUBDIR"
     assert after_create =~ "SOURCE_REPO_PULL_PATHS"
@@ -898,6 +899,8 @@ defmodule SymphonyElixir.WorkflowTemplatesTest do
 
     before_run = get_in(config, ["hooks", "before_run"])
     assert before_run =~ "SYMPHONY_ISSUE_BRANCH_NAME"
+    assert before_run =~ "xhigh)"
+    refute before_run =~ "high|xhigh"
     assert before_run =~ "refs/remotes/origin/$task_base_branch"
     assert before_run =~ "repo-materialization-mode"
     assert before_run =~ "expected_repo_materialization_mode"
@@ -913,7 +916,8 @@ defmodule SymphonyElixir.WorkflowTemplatesTest do
     assert prompt =~ "never invent a branch name or pass"
     assert prompt =~ "both `identifier` and `branch`"
     assert prompt =~ "AI模型等级"
-    assert prompt =~ "`high` and `xhigh`"
+    assert prompt =~ "`xhigh` uses a"
+    assert prompt =~ "`low`, `medium`, and `high` use the blobless sparse checkout"
     assert prompt =~ "complete checkout"
 
     tool_context =

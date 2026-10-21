@@ -103,7 +103,7 @@ hooks:
     repo_materialization_file="${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/repo-materialization-mode"
     repo_materialization_paths_file="${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/repo-materialization-paths"
     case "${SYMPHONY_AGENT_REASONING_EFFORT:-medium}" in
-      high|xhigh)
+      xhigh)
         full_reference="$("${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/bin/repo-full-checkout" validate-reference "${SOURCE_REPO_LOCAL_REFERENCE:-}" "$SOURCE_REPO_URL")"
         if [ -z "$task_base_branch" ]; then
           echo "A target branch is required for complete repository materialization" >&2
@@ -149,7 +149,7 @@ hooks:
   before_run: |
     task_base_branch="${SYMPHONY_ISSUE_BRANCH_NAME:-${SOURCE_REPO_BASE_BRANCH:-}}"
     case "${SYMPHONY_AGENT_REASONING_EFFORT:-medium}" in
-      high|xhigh)
+      xhigh)
         configured_pull_paths="${SOURCE_REPO_PULL_PATHS:-}"
         if [ -n "$(printf '%s' "$configured_pull_paths" | tr -d '[:space:]')" ]; then
           expected_repo_materialization_mode=partial

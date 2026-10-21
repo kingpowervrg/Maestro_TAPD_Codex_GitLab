@@ -16,13 +16,13 @@ Copy `.env.example` to an external, mode-0600 environment file. The GitLab token
 needs read-only API access. It is used only by `repo_remote_search` and excluded
 from the agent shell. Git checkout, commit, and push authenticate with Git SSH.
 
-Configure the complete local checkout used by higher-reasoning tasks in that
+Configure the complete local checkout used by `xhigh` tasks in that
 environment file:
 
 ```bash
 SOURCE_REPO_LOCAL_REFERENCE=/home/admin2/workspace_k1/master
 SOURCE_REPO_PROJECT_SUBDIR=Game
-# Optional for high/xhigh; use comma-separated sparse-checkout patterns.
+# Optional for xhigh; use comma-separated sparse-checkout patterns.
 SOURCE_REPO_PULL_PATHS=Game/.agents,Game/.codex,Game/.cursor,Game/Assets/_Script/*.cs,Game/Assets/_Script/**/*.cs,Game/Docs,Game/AGENTS.md,Game/openspec
 ```
 
@@ -35,17 +35,18 @@ borrowing task workspaces have been removed.
 
 The normalized reasoning effort controls materialization:
 
-- `high` and `xhigh` first create a local shared clone with full history, then
+- `xhigh` first creates a local shared clone with full history, then
   point `origin` back to GitLab and fetch only the requested branch delta. If
   `SOURCE_REPO_PULL_PATHS` is set, Git sparse checkout expands only the listed
   directories and all of their descendants. If it is empty, the task receives
   the complete working tree. Both variants avoid validating the entire
   alternate object database during a remote clone. The task checks out the
   TAPD `代码分支` when present, otherwise `SOURCE_REPO_BASE_BRANCH`.
-- `low` and `medium` retain the blobless, depth-1 sparse checkout backed by the
+- `low`, `medium`, and `high` retain the blobless, depth-1 sparse checkout
+  backed by the
   shared object cache.
 
-Before a high/xhigh Codex process starts, workspace bootstrap writes a generated
+Before an `xhigh` Codex process starts, workspace bootstrap writes a generated
 workspace-root `AGENTS.md` that routes the agent to the configured project
 subdirectory. Skills found immediately below
 `<project>/.codex/skills/` and `<project>/.agents/skills/` are copied into the

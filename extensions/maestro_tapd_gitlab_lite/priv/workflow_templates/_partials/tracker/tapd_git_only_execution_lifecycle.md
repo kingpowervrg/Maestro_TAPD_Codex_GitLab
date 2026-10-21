@@ -22,7 +22,7 @@ are human-owned or stopped states and are deliberately absent from
    both `identifier` and `branch`. Confirm the working branch is neither the
    development base nor final integration branch `{{ repo.base_branch }}` and
    follows the configured work prefix before any commit or push.
-4. Repository materialization follows `AI模型等级`. `high` and `xhigh` use a
+4. Repository materialization follows `AI模型等级`. `xhigh` uses a
    local-first checkout borrowed from the configured reference repository,
    followed by a fetch of only the requested remote branch delta. When
    `SOURCE_REPO_PULL_PATHS` is configured, only those repository-relative
@@ -31,10 +31,10 @@ are human-owned or stopped states and are deliberately absent from
    Repository-owned `AGENTS.md` guidance and skills are installed before Codex
    starts. Read and follow the generated workspace-root `AGENTS.md`, do not call
    `repo_sparse_add`, and use local search inside the configured project root.
-   `low` and `medium` use the blobless sparse checkout and sparse index. In that
-   mode, call `repo_remote_search` with exact identifiers and the development
-   ref, then call `repo_sparse_add` only for the smallest required target
-   directories; never add `.` or the repository root. In either mode, fetch Git
+   `low`, `medium`, and `high` use the blobless sparse checkout and sparse index.
+   In that mode, call `repo_remote_search` with exact identifiers and the
+   development ref, then call `repo_sparse_add` only for the smallest required
+   target directories; never add `.` or the repository root. In either mode, fetch Git
    LFS objects only for explicitly required paths, work only under `repo/`, run
    every repository and Story-required validation step, and record commands and
    outcomes in the workpad.
