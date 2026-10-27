@@ -5,13 +5,16 @@ usage() {
   cat <<'EOF'
 Usage:
   repo-full-checkout validate-reference <repository-path> <expected-remote-url>
+  repo-full-checkout require-current <repository-path> <remote-url> <branch>
+  repo-full-checkout refresh-task-ref <repository-path> <remote-url> <task-repo> <branch>
   repo-full-checkout materialize <repository-path> <remote-url> <target-path> <branch> [path1,path2]
   repo-full-checkout install-agent-context <project-root> <workspace-root>
 
-Validates a complete local Git reference repository, materializes an independent
-task checkout from it before fetching the requested remote branch, optionally
-using sparse checkout paths, or exposes repository-owned agent guidance and
-skills before Codex starts.
+Validates a complete local Git reference repository and materializes an
+independent task checkout from it. The requested branch must already exist in
+the reference at the same SHA as the remote; this helper never fetches that
+branch into the task workspace. Sparse checkout paths are optional. It can also
+expose repository-owned agent guidance and skills before Codex starts.
 EOF
 }
 
@@ -117,6 +120,88 @@ validate_reference() {
   printf '%s\n' "$reference_repo"
 }
 
+reference_branch_sha() {
+  reference_repo="$1"
+  branch="$2"
+
+  if git -C "$reference_repo" rev-parse --verify --quiet "refs/remotes/origin/${branch}^{commit}" >/dev/null; then
+    git -C "$reference_repo" rev-parse "refs/remotes/origin/${branch}^{commit}"
+    return 0
+  fi
+
+  if git -C "$reference_repo" rev-parse --verify --quiet "refs/heads/${branch}^{commit}" >/dev/null; then
+    git -C "$reference_repo" rev-parse "refs/heads/${branch}^{commit}"
+    return 0
+  fi
+
+  return 1
+}
+
+remote_branch_sha() {
+  remote_url="$1"
+  branch="$2"
+  remote_sha="$(GIT_TERMINAL_PROMPT=0 git ls-remote --exit-code "$remote_url" "refs/heads/$branch" | awk 'NR == 1 { print $1 }')" || return 1
+  [ -n "$remote_sha" ] || return 1
+  printf '%s\n' "$remote_sha"
+}
+
+reference_update_command() {
+  reference_repo="$1"
+  branch="$2"
+  printf 'git -C "%s" fetch origin "+refs/heads/%s:refs/remotes/origin/%s"' "$reference_repo" "$branch" "$branch"
+}
+
+require_current() {
+  reference_repo="$1"
+  remote_url="$2"
+  branch="$3"
+
+  validate_argument "$reference_repo" "repository path"
+  validate_argument "$remote_url" "remote URL"
+  validate_argument "$branch" "branch"
+  git check-ref-format "refs/heads/$branch" >/dev/null 2>&1 ||
+    fail "Invalid task checkout branch: $branch"
+
+  reference_repo="$(validate_reference "$reference_repo" "$remote_url")"
+  update_command="$(reference_update_command "$reference_repo" "$branch")"
+
+  if ! local_sha="$(reference_branch_sha "$reference_repo" "$branch")"; then
+    fail "Complete checkout reference has no refs/remotes/origin/$branch or refs/heads/$branch. Update it without switching its worktree: $update_command. Refusing to fetch the branch inside the task workspace." 74
+  fi
+
+  if ! remote_sha="$(remote_branch_sha "$remote_url" "$branch")"; then
+    fail "Unable to resolve origin/$branch" 1
+  fi
+
+  if [ "$local_sha" != "$remote_sha" ]; then
+    fail "Complete checkout reference for $branch is $local_sha but origin/$branch is $remote_sha. Update SOURCE_REPO_LOCAL_REFERENCE without switching its worktree: $update_command. Refusing to fetch the branch inside the task workspace." 74
+  fi
+
+  printf '%s\n' "$local_sha"
+}
+
+refresh_task_ref() {
+  reference_repo="$1"
+  remote_url="$2"
+  task_repo="$3"
+  branch="$4"
+  local_sha="$(require_current "$reference_repo" "$remote_url" "$branch")"
+
+  if [ ! -e "$task_repo/.git" ]; then
+    return 0
+  fi
+
+  current_sha="$(git -C "$task_repo" rev-parse --verify --quiet "refs/remotes/origin/${branch}^{commit}" || true)"
+  if [ "$current_sha" = "$local_sha" ]; then
+    return 0
+  fi
+
+  git -C "$task_repo" cat-file -e "${local_sha}^{commit}" >/dev/null 2>&1 ||
+    fail "Task workspace cannot see $local_sha from the complete checkout reference. Remove the task workspace and retry. Refusing to fetch the branch inside the task workspace." 74
+
+  git -C "$task_repo" update-ref "refs/remotes/origin/$branch" "$local_sha"
+}
+
 materialize() {
   reference_repo="$1"
   remote_url="$2"
@@ -151,20 +236,16 @@ materialize() {
   }
   trap cleanup_materialization EXIT HUP INT TERM
 
-  # A remote clone with --reference makes index-pack prove connectivity against
-  # the entire alternate object database. A local shared clone establishes refs
-  # and alternates immediately, so the remote fetch transfers only missing
-  # objects before the complete working tree is populated.
+  # Compare the reference with the remote before creating any task checkout.
+  # Object transfer stays outside the task: a stale or missing branch must be
+  # fetched into the reference repository, never with a filtered task fetch.
+  local_sha="$(require_current "$reference_repo" "$remote_url" "$branch")"
+
   GIT_LFS_SKIP_SMUDGE=1 git clone --shared --no-checkout -- "$reference_repo" "$initializing_path"
   git -C "$initializing_path" remote set-url origin "$remote_url"
+  git -C "$initializing_path" update-ref "refs/remotes/origin/$branch" "$local_sha"
   if [ "${#sparse_paths[@]}" -gt 0 ]; then
-    GIT_LFS_SKIP_SMUDGE=1 GIT_TERMINAL_PROMPT=0 git -C "$initializing_path" fetch \
-      --no-tags --filter=blob:none origin \
-      "+refs/heads/$branch:refs/remotes/origin/$branch"
     git -C "$initializing_path" sparse-checkout set --no-cone -- "${sparse_paths[@]}"
-  else
-    GIT_LFS_SKIP_SMUDGE=1 GIT_TERMINAL_PROMPT=0 git -C "$initializing_path" fetch --no-tags origin \
-      "+refs/heads/$branch:refs/remotes/origin/$branch"
   fi
   GIT_LFS_SKIP_SMUDGE=1 git -C "$initializing_path" checkout --force -B "$branch" \
     --track "refs/remotes/origin/$branch"
@@ -242,6 +323,14 @@ case "$1" in
   validate-reference)
     [ "$#" -eq 3 ] || { usage >&2; exit 64; }
     validate_reference "$2" "$3"
+    ;;
+  require-current)
+    [ "$#" -eq 4 ] || { usage >&2; exit 64; }
+    require_current "$2" "$3" "$4"
+    ;;
+  refresh-task-ref)
+    [ "$#" -eq 5 ] || { usage >&2; exit 64; }
+    refresh_task_ref "$2" "$3" "$4" "$5"
     ;;
   materialize)
     [ "$#" -ge 5 ] && [ "$#" -le 6 ] || { usage >&2; exit 64; }

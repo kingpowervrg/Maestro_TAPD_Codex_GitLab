@@ -30,4 +30,23 @@ defmodule SymphonyElixir.TapdCommentCodecTest do
     assert String.trim_trailing(CommentCodec.decode_description(CommentCodec.encode_description(markdown))) ==
              String.trim_trailing(markdown)
   end
+
+  test "renders markdown when failure text contains an angle-bracketed exception" do
+    markdown = """
+    ### Confusions
+
+    #### Failure
+
+    ```text
+    %RuntimeError{message: "agent failed <RuntimeError{...}>"}
+    ```
+    """
+
+    html = CommentCodec.encode_description(markdown)
+
+    assert html =~ "<h3>Confusions</h3>"
+    assert html =~ "<h4>Failure</h4>"
+    assert html =~ ~s(<pre><code class="language-text">)
+    refute html =~ "### Confusions"
+  end
 end

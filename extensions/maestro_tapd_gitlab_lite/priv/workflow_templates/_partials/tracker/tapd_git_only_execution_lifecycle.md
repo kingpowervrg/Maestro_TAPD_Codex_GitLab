@@ -23,11 +23,13 @@ are human-owned or stopped states and are deliberately absent from
    development base nor final integration branch `{{ repo.base_branch }}` and
    follows the configured work prefix before any commit or push.
 4. Repository materialization follows `AI模型等级`. `xhigh` uses a
-   local-first checkout borrowed from the configured reference repository,
-   followed by a fetch of only the requested remote branch delta. When
-   `SOURCE_REPO_PULL_PATHS` is configured, only those repository-relative
-   directories and their descendants are materialized through sparse checkout;
-   when it is empty, the complete checkout working tree is materialized.
+   local-first checkout borrowed from the configured reference repository.
+   It checks out the requested branch only when that reference already contains
+   the same commit as the remote, and it does not fetch the branch inside the
+   task workspace. When `SOURCE_REPO_PULL_PATHS` is configured, only those
+   repository-relative directories and their descendants are materialized
+   through sparse checkout; when it is empty, the complete checkout working
+   tree is materialized.
    Repository-owned `AGENTS.md` guidance and skills are installed before Codex
    starts. Read and follow the generated workspace-root `AGENTS.md`, do not call
    `repo_sparse_add`, and use local search inside the configured project root.

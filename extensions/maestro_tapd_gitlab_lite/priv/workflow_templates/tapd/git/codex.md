@@ -109,6 +109,8 @@ hooks:
           echo "A target branch is required for complete repository materialization" >&2
           exit 64
         fi
+        "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/bin/repo-full-checkout" require-current \
+          "$full_reference" "$SOURCE_REPO_URL" "$task_base_branch"
         pull_paths="${SOURCE_REPO_PULL_PATHS:-}"
         if [ -n "$(printf '%s' "$pull_paths" | tr -d '[:space:]')" ]; then
           printf '%s\n' partial-initializing > "$repo_materialization_file"
@@ -164,29 +166,38 @@ hooks:
       echo "Complete repository materialization did not finish; remove the incomplete workspace and retry" >&2
       exit 75
     fi
+    if [ "$expected_repo_materialization_mode" = "full" ] || [ "$expected_repo_materialization_mode" = "partial" ]; then
+      "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/bin/repo-full-checkout" require-current \
+        "${SOURCE_REPO_LOCAL_REFERENCE:-}" "$SOURCE_REPO_URL" "$task_base_branch"
+    fi
     if [ "$repo_materialization_mode" != "$expected_repo_materialization_mode" ]; then
-      echo "Existing workspace repository materialization does not match the current reasoning effort" >&2
+      if [ "$expected_repo_materialization_mode" != "sparse" ] && [ "$repo_materialization_mode" = "missing" ]; then
+        echo "xhigh workspace was not materialized from the complete checkout reference. Remove this workspace and retry." >&2
+      else
+        echo "Existing workspace repository materialization does not match the current reasoning effort" >&2
+      fi
       exit 74
     fi
     if [ "$repo_materialization_mode" = "partial" ]; then
       configured_pull_paths="${SOURCE_REPO_PULL_PATHS:-}"
       materialized_pull_paths="$(cat "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/repo-materialization-paths" 2>/dev/null || true)"
       if [ "$materialized_pull_paths" != "$configured_pull_paths" ]; then
-        echo "Existing partial repository materialization does not match SOURCE_REPO_PULL_PATHS" >&2
+        echo "Existing partial repository materialization does not match SOURCE_REPO_PULL_PATHS. Remove this workspace through the normal cleanup path and retry." >&2
         exit 74
       fi
     fi
     if [ -n "$task_base_branch" ] && [ -d repo/.git ]; then
-      local_base_sha="$(git -C repo rev-parse "refs/remotes/origin/$task_base_branch" 2>/dev/null || true)"
-      remote_base_sha="$(GIT_TERMINAL_PROMPT=0 git -C repo ls-remote --exit-code origin "refs/heads/$task_base_branch" | awk 'NR == 1 {print $1}')"
-      if [ -z "$remote_base_sha" ]; then
-        echo "Unable to resolve origin/$task_base_branch" >&2
-        exit 1
-      fi
-      if [ "$local_base_sha" != "$remote_base_sha" ]; then
-        if [ "$repo_materialization_mode" = "full" ]; then
-          GIT_LFS_SKIP_SMUDGE=1 GIT_TERMINAL_PROMPT=0 git -C repo fetch --no-tags origin "+$task_base_branch:refs/remotes/origin/$task_base_branch"
-        else
+      if [ "$repo_materialization_mode" = "full" ] || [ "$repo_materialization_mode" = "partial" ]; then
+        "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/bin/repo-full-checkout" refresh-task-ref \
+          "${SOURCE_REPO_LOCAL_REFERENCE:-}" "$SOURCE_REPO_URL" repo "$task_base_branch"
+      else
+        local_base_sha="$(git -C repo rev-parse "refs/remotes/origin/$task_base_branch" 2>/dev/null || true)"
+        remote_base_sha="$(GIT_TERMINAL_PROMPT=0 git -C repo ls-remote --exit-code origin "refs/heads/$task_base_branch" | awk 'NR == 1 {print $1}')"
+        if [ -z "$remote_base_sha" ]; then
+          echo "Unable to resolve origin/$task_base_branch" >&2
+          exit 1
+        fi
+        if [ "$local_base_sha" != "$remote_base_sha" ]; then
           GIT_LFS_SKIP_SMUDGE=1 GIT_TERMINAL_PROMPT=0 git -C repo fetch --no-tags --depth 1 --filter=blob:none origin "+$task_base_branch:refs/remotes/origin/$task_base_branch"
         fi
       fi

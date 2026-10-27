@@ -2,7 +2,7 @@ defmodule SymphonyElixir.Tracker.Tapd.CommentCodec.DescriptionDecoder do
   @moduledoc false
 
   @block_tags ~w[h1 h2 h3 h4 h5 h6 p div ul ol pre]
-  @html_fragment_pattern ~r/<[a-zA-Z][^>]*>/
+  @html_fragment_pattern ~r/<(?:h[1-6]|p|ul|ol|li|pre|code|a|strong|b|em|i|br|div|span)(?:\s[^>]*)?>/i
 
   @spec decode(String.t()) :: String.t()
   def decode(description) when is_binary(description) do

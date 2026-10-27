@@ -40,7 +40,7 @@ defmodule MaestroTapdGitlabLite.RepoBootstrap.FullCheckoutTest do
     assert output =~ "must not be a promisor clone"
   end
 
-  test "materializes locally first, fetches the remote delta, and checks out the requested branch" do
+  test "checks out a reference branch locally and refuses to fetch it inside the task" do
     root = tmp_dir!("full-checkout-development-branch")
     remote = Path.join(root, "remote.git")
     seed = Path.join(root, "seed")
@@ -63,11 +63,30 @@ defmodule MaestroTapdGitlabLite.RepoBootstrap.FullCheckoutTest do
     run!("git", ["-C", seed, "commit", "-m", "Development branch content"])
     run!("git", ["-C", seed, "push", "origin", "v22.0/god"])
 
+    assert {missing_output, 74} =
+             System.cmd(
+               @helper,
+               ["materialize", reference, remote, "task-checkout", "v22.0/god"],
+               cd: root,
+               stderr_to_stdout: true
+             )
+
+    assert missing_output =~ "Refusing to fetch the branch inside the task workspace"
+    refute File.exists?(task_checkout)
+    assert String.trim(run!("git", ["-C", reference, "branch", "--show-current"])) == "master"
+
+    run!(
+      "git",
+      ["-C", reference, "fetch", "origin", "+refs/heads/v22.0/god:refs/remotes/origin/v22.0/god"]
+    )
+
+    assert String.trim(run!("git", ["-C", reference, "branch", "--show-current"])) == "master"
     run!(@helper, ["materialize", reference, remote, "task-checkout", "v22.0/god"], cd: root)
 
     assert String.trim(run!("git", ["-C", task_checkout, "branch", "--show-current"])) == "v22.0/god"
     assert File.read!(Path.join(task_checkout, "shared.txt")) == "master content\n"
     assert File.read!(Path.join(task_checkout, "branch.txt")) == "development content\n"
+    refute promisor?(task_checkout)
 
     alternates =
       task_checkout
@@ -79,6 +98,28 @@ defmodule MaestroTapdGitlabLite.RepoBootstrap.FullCheckoutTest do
     assert String.trim(run!("git", ["-C", task_checkout, "remote", "get-url", "origin"])) == remote
     assert String.trim(run!("git", ["-C", task_checkout, "rev-parse", "--is-shallow-repository"])) == "false"
     refute File.exists?(Path.join(task_checkout, ".git/shallow"))
+    File.write!(Path.join(seed, "branch.txt"), "updated development content\n")
+    run!("git", ["-C", seed, "add", "branch.txt"])
+    run!("git", ["-C", seed, "commit", "-m", "Update development branch"])
+    run!("git", ["-C", seed, "push", "origin", "v22.0/god"])
+    assert {stale_output, 74} =
+             System.cmd(@helper, ["refresh-task-ref", reference, remote, task_checkout, "v22.0/god"],
+               stderr_to_stdout: true
+             )
+    assert stale_output =~ "Refusing to fetch the branch inside the task workspace"
+    previous_head =
+      String.trim(run!("git", ["-C", task_checkout, "rev-parse", "refs/remotes/origin/v22.0/god"]))
+    run!(
+      "git",
+      ["-C", reference, "fetch", "origin", "+refs/heads/v22.0/god:refs/remotes/origin/v22.0/god"]
+    )
+    run!(@helper, ["refresh-task-ref", reference, remote, task_checkout, "v22.0/god"])
+    updated_ref =
+      String.trim(run!("git", ["-C", task_checkout, "rev-parse", "refs/remotes/origin/v22.0/god"]))
+    assert updated_ref != previous_head
+    assert updated_ref ==
+             String.trim(run!("git", ["-C", reference, "rev-parse", "refs/remotes/origin/v22.0/god"]))
+    assert String.trim(run!("git", ["-C", reference, "branch", "--show-current"])) == "master"
   end
 
   test "materializes only configured directories and their descendants" do
@@ -118,7 +159,7 @@ defmodule MaestroTapdGitlabLite.RepoBootstrap.FullCheckoutTest do
     refute File.exists?(Path.join(task_checkout, "Game/Assets/Textures/large.bin"))
     refute File.exists?(Path.join(task_checkout, "README.md"))
     assert String.trim(run!("git", ["-C", task_checkout, "config", "--bool", "core.sparseCheckout"])) == "true"
-    assert String.trim(run!("git", ["-C", task_checkout, "config", "--get", "remote.origin.promisor"])) == "true"
+    refute promisor?(task_checkout)
   end
 
   test "rejects unsafe or empty sparse checkout path entries" do
@@ -199,5 +240,14 @@ defmodule MaestroTapdGitlabLite.RepoBootstrap.FullCheckoutTest do
     File.mkdir_p!(path)
     on_exit(fn -> File.rm_rf!(path) end)
     path
+  end
+
+  defp promisor?(checkout) do
+    case System.cmd("git", ["-C", checkout, "config", "--get", "remote.origin.promisor"],
+           stderr_to_stdout: true
+         ) do
+      {output, 0} -> String.trim(output) == "true"
+      {_output, _status} -> false
+    end
   end
 end

@@ -1,7 +1,12 @@
 defmodule SymphonyElixir.Tracker.Tapd.CommentCodec.DescriptionEncoder do
   @moduledoc false
 
-  @html_fragment_pattern ~r/<[a-zA-Z][^>]*>/
+  # Only treat tags emitted/understood by the TAPD comment codec as an
+  # already-rendered HTML fragment. Error text frequently contains terms such
+  # as `<RuntimeError{...}>`; accepting every angle-bracket expression here
+  # bypasses Markdown rendering and makes TAPD show headings and `\\n` escapes
+  # as plain text.
+  @html_fragment_pattern ~r/<(?:h[1-6]|p|ul|ol|li|pre|code|a|strong|b|em|i|br|div|span)(?:\s[^>]*)?>/i
   @heading_pattern ~r/^(#+)\s+(.+)$/
   @list_pattern ~r/^(\s*)- (.+)$/
   @fenced_code_pattern ~r/^```([A-Za-z0-9_-]+)?\s*$/

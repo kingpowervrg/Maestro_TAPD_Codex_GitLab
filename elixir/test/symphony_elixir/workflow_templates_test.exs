@@ -908,7 +908,9 @@ defmodule SymphonyElixir.WorkflowTemplatesTest do
     assert before_run =~ "Existing partial repository materialization does not match SOURCE_REPO_PULL_PATHS"
     assert before_run =~ "Complete repository materialization did not finish"
     assert before_run =~ "does not match the current reasoning effort"
-    assert before_run =~ "--no-tags origin"
+    assert before_run =~ "refresh-task-ref"
+    assert before_run =~ "--no-tags --depth 1 --filter=blob:none origin"
+    refute before_run =~ "fetch --no-tags origin"
     assert prompt =~ "Story development base"
     assert prompt =~ "final integration branch"
     assert prompt =~ ~s(identifier: "{{ issue.identifier }}")

@@ -8,8 +8,9 @@ approvals, and merges remain manual.
 For TAPD Bugs and Tasks, execution is opt-in: the item must be in an active
 state and have `AI特殊工作流=接受/处理`. Their normalized `AI模型等级`
 controls repository materialization; `xhigh` uses the bundled workflow's
-`SOURCE_REPO_LOCAL_REFERENCE` as a fast local shared clone, then fetches only
-the requested GitLab branch delta. Set `SOURCE_REPO_PULL_PATHS` to
+`SOURCE_REPO_LOCAL_REFERENCE` as a fast local shared clone and checks out the
+requested branch only when that reference already has the remote SHA. It does
+not fetch the branch inside the task workspace. Set `SOURCE_REPO_PULL_PATHS` to
 a comma-separated list of Git sparse-checkout patterns. Positive patterns expand
 selected paths recursively; patterns beginning with `!` exclude matching paths:
 
