@@ -49,7 +49,10 @@ defmodule MaestroTapdGitlabLite.Tracker.PolicyLifecycle do
     state = issue |> Map.get(:state) |> normalize() |> String.downcase()
 
     active_states =
-      Enum.map(PolicyConfig.active_states(tracker, Map.get(issue, :entity_type, "bug")), &(normalize(&1) |> String.downcase()))
+      Enum.map(
+        PolicyConfig.active_states(tracker, Map.get(issue, :entity_type, "bug")),
+        &(normalize(&1) |> String.downcase())
+      )
 
     cond do
       state not in active_states ->
@@ -79,13 +82,23 @@ defmodule MaestroTapdGitlabLite.Tracker.PolicyLifecycle do
   end
 
   defp maybe_update(issue, tracker, context, target) do
-    if workflow_value(issue, tracker) == target do
-      :ok
-    else
-      case Map.get(context, :update_fields) do
-        fun when is_function(fun, 1) -> fun.(%{PolicyConfig.workflow_field(tracker) => target})
-        _fun -> {:error, :issue_policy_update_operation_missing}
-      end
+    entity_type = Map.get(issue, :entity_type, "bug")
+
+    cond do
+      workflow_value(issue, tracker) == target ->
+        :ok
+
+      true ->
+        case {PolicyConfig.workflow_field(tracker, entity_type), Map.get(context, :update_fields)} do
+          {field, fun} when is_binary(field) and is_function(fun, 1) ->
+            fun.(%{field => target})
+
+          {field, _fun} when is_binary(field) ->
+            {:error, :issue_policy_update_operation_missing}
+
+          {_field, _fun} ->
+            {:error, :issue_policy_workflow_field_missing}
+        end
     end
   end
 

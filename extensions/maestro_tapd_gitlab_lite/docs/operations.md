@@ -73,10 +73,13 @@ remove that stale issue workspace through the normal Maestro cleanup path and
 let the next attempt recreate it. A missing or stale reference branch must be
 updated in `SOURCE_REPO_LOCAL_REFERENCE` first.
 
-The company Bug policy requires a configured workflow field. Only active Bugs
-whose configured value is `接受/处理` are dispatched. Successful completion
-writes `AI已解决`; terminal failure writes `AI异常`. Both paths read the Bug back
-before reporting success and refuse to overwrite a human change.
+A retained workspace whose `.symphony-tapd-workpad.md` already records `published_head_sha` and `suggested_mr_title` is completion recovery. Its `before_run` hook does not refresh `SOURCE_REPO_LOCAL_REFERENCE` or fetch the development baseline. New and incomplete checkouts still require the reference to match the remote.
+
+The company policy requires a configured workflow field. Bugs use the Bug field;
+Stories use the task field. Only active work items whose configured value is
+`接受/处理` are dispatched. Successful completion writes `AI已解决`; terminal
+failure writes `AI异常`. Both paths write and read back the field selected for
+that work item, and refuse to overwrite a human change.
 
 Stopping a running session from the Dashboard follows the same exception
 policy: the TAPD `AI特殊工作流` field is read back, changed to `AI异常`, and

@@ -161,16 +161,23 @@ hooks:
         ;;
       *) expected_repo_materialization_mode=sparse ;;
     esac
+    handoff_recovery=false
+    if [ -f .symphony-tapd-workpad.md ] &&
+      grep -q 'published_head_sha' .symphony-tapd-workpad.md &&
+      grep -q 'suggested_mr_title' .symphony-tapd-workpad.md; then
+      handoff_recovery=true
+      echo "Existing published workpad found; running completion recovery without baseline checkout" >&2
+    fi
     repo_materialization_mode="$(cat "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/repo-materialization-mode" 2>/dev/null || printf '%s' missing)"
     if [ "$repo_materialization_mode" = "full-initializing" ] || [ "$repo_materialization_mode" = "partial-initializing" ]; then
       echo "Complete repository materialization did not finish; remove the incomplete workspace and retry" >&2
       exit 75
     fi
-    if [ "$expected_repo_materialization_mode" = "full" ] || [ "$expected_repo_materialization_mode" = "partial" ]; then
+    if { [ "$expected_repo_materialization_mode" = "full" ] || [ "$expected_repo_materialization_mode" = "partial" ]; } && [ "$handoff_recovery" != true ]; then
       "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/bin/repo-full-checkout" require-current \
         "${SOURCE_REPO_LOCAL_REFERENCE:-}" "$SOURCE_REPO_URL" "$task_base_branch"
     fi
-    if [ "$repo_materialization_mode" != "$expected_repo_materialization_mode" ]; then
+    if [ "$handoff_recovery" != true ] && [ "$repo_materialization_mode" != "$expected_repo_materialization_mode" ]; then
       if [ "$expected_repo_materialization_mode" != "sparse" ] && [ "$repo_materialization_mode" = "missing" ]; then
         echo "xhigh workspace was not materialized from the complete checkout reference. Remove this workspace and retry." >&2
       else
@@ -178,7 +185,7 @@ hooks:
       fi
       exit 74
     fi
-    if [ "$repo_materialization_mode" = "partial" ]; then
+    if [ "$handoff_recovery" != true ] && [ "$repo_materialization_mode" = "partial" ]; then
       configured_pull_paths="${SOURCE_REPO_PULL_PATHS:-}"
       materialized_pull_paths="$(cat "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/repo-materialization-paths" 2>/dev/null || true)"
       if [ "$materialized_pull_paths" != "$configured_pull_paths" ]; then
@@ -186,7 +193,9 @@ hooks:
         exit 74
       fi
     fi
-    if [ -n "$task_base_branch" ] && [ -d repo/.git ]; then
+    if [ "$handoff_recovery" = true ]; then
+      :
+    elif [ -n "$task_base_branch" ] && [ -d repo/.git ]; then
       if [ "$repo_materialization_mode" = "full" ] || [ "$repo_materialization_mode" = "partial" ]; then
         "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/bin/repo-full-checkout" refresh-task-ref \
           "${SOURCE_REPO_LOCAL_REFERENCE:-}" "$SOURCE_REPO_URL" repo "$task_base_branch"
