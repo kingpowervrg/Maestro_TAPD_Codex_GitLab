@@ -32,6 +32,9 @@ set -a
 source "${env_file}"
 set +a
 
+: "${GITLAB_REMOTE_BLOB_SEARCH_ENABLED:=false}"
+export GITLAB_REMOTE_BLOB_SEARCH_ENABLED
+
 required_variables=(
   SYMPHONY_WORKSPACE_ROOT
   SYMPHONY_WORKSPACE_HOOK_TIMEOUT_MS
@@ -44,7 +47,6 @@ required_variables=(
   SOURCE_REPO_BRANCH_WORK_PREFIX
   SOURCE_REPO_LOCAL_REFERENCE
   SOURCE_REPO_PROJECT_SUBDIR
-  GITLAB_API_TOKEN
 )
 
 for variable_name in "${required_variables[@]}"; do
@@ -54,8 +56,26 @@ for variable_name in "${required_variables[@]}"; do
   fi
 done
 
+case "${GITLAB_REMOTE_BLOB_SEARCH_ENABLED}" in
+  true|false) ;;
+  *)
+    printf 'GITLAB_REMOTE_BLOB_SEARCH_ENABLED must be true or false.\n' >&2
+    exit 1
+    ;;
+esac
+
+if [[ "${GITLAB_REMOTE_BLOB_SEARCH_ENABLED}" == true ]] && [[ -z "${GITLAB_API_TOKEN:-}" ]]; then
+  printf 'Missing required variable in %s: GITLAB_API_TOKEN (remote blob search is enabled)\n' "${env_file}" >&2
+  exit 1
+fi
+
 if ! command -v mise >/dev/null 2>&1; then
   printf '%s\n' 'mise is required but was not found in PATH.' >&2
+  exit 127
+fi
+
+if ! command -v python3 >/dev/null 2>&1; then
+  printf '%s\n' 'python3 is required for local repository search but was not found in PATH.' >&2
   exit 127
 fi
 

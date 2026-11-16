@@ -833,6 +833,13 @@ defmodule SymphonyElixir.WorkflowTemplatesTest do
     assert settings.repo.provider.options["remote_code_search"] == "gitlab"
     assert get_in(config, ["repo", "provider", "options", "gitlab_api_base_url"]) == "$GITLAB_API_BASE_URL"
     assert get_in(config, ["repo", "provider", "options", "gitlab_project_id"]) == "$GITLAB_PROJECT_ID"
+
+    assert get_in(config, ["repo", "provider", "options", "remote_blob_search_enabled"]) ==
+             "$GITLAB_REMOTE_BLOB_SEARCH_ENABLED"
+
+    assert get_in(config, ["repo", "provider", "options", "local_search_reference"]) ==
+             "$SOURCE_REPO_LOCAL_REFERENCE"
+
     assert get_in(config, ["tracker", "provider", "assignee"]) == "$TAPD_ASSIGNEE"
 
     assert get_in(config, ["tracker", "provider", "platform", "bug_ai_workflow"]) == %{
@@ -925,6 +932,8 @@ defmodule SymphonyElixir.WorkflowTemplatesTest do
     assert prompt =~ "`xhigh` uses a"
     assert prompt =~ "`low`, `medium`, and `high` use the blobless sparse checkout"
     assert prompt =~ "complete checkout"
+
+    settings = put_in(settings.repo.provider.options["local_search_reference"], System.tmp_dir!())
 
     tool_context =
       SymphonyElixir.Agent.DynamicTool.capture_context(

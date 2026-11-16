@@ -359,7 +359,7 @@ defmodule SymphonyElixir.Workflow.DynamicToolPlanTest do
       repo: %{
         provider: %{
           kind: "git",
-          options: %{remote_code_search: "gitlab"}
+          options: %{remote_code_search: "gitlab", remote_blob_search_enabled: true}
         }
       }
     }

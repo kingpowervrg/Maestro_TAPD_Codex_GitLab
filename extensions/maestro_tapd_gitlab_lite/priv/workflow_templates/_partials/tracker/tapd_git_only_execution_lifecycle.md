@@ -43,7 +43,9 @@ If delivery evidence is missing, the published SHA differs, or new feedback requ
    `repo_sparse_add`, and use local search inside the configured project root.
    `low`, `medium`, and `high` use the blobless sparse checkout and sparse index.
    In that mode, call `repo_remote_search` with exact identifiers and the
-   development ref, then call `repo_sparse_add` only for the smallest required
+   development ref. By default it searches the complete local reference without
+   switching its worktree; GitLab blob search is used only when
+   `GITLAB_REMOTE_BLOB_SEARCH_ENABLED=true`. Then call `repo_sparse_add` only for the smallest required
    target directories; never add `.` or the repository root. In either mode, fetch Git
    LFS objects only for explicitly required paths, work only under `repo/`, run
    every repository and Story-required validation step, and record commands and

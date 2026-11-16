@@ -1,9 +1,13 @@
 # Maestro TAPD + GitLab Lite
 
 Independent OTP extension for the company TAPD AI policy and the temporary
-GitLab Lite repository backend. Git writes use SSH. The only GitLab HTTP API
-capability is read-only blob search; merge requests, reviews, pipelines,
-approvals, and merges remain manual.
+GitLab Lite repository backend. Git writes use SSH. Code search uses the local
+complete reference by default. `GITLAB_REMOTE_BLOB_SEARCH_ENABLED=false` makes
+`repo_remote_search` synchronize the requested branch in that reference and
+search its current commit locally, even when the reference worktree remains on
+`master`. Optional GitLab HTTP blob search is used only when the switch is
+`true`. Merge requests,
+reviews, pipelines, approvals, and merges remain manual.
 
 For TAPD Bugs and Tasks, execution is opt-in: the item must be in an active
 state and have `AI特殊工作流=接受/处理`. Their normalized `AI模型等级`

@@ -154,7 +154,7 @@ defmodule SymphonyElixir.Extension.TapdGitlabLiteIntegrationTest do
       provider: %{
         kind: "git",
         repository: "acme/widgets",
-        options: %{remote_code_search: "gitlab"}
+        options: %{remote_code_search: "gitlab", remote_blob_search_enabled: true}
       }
     }
   end

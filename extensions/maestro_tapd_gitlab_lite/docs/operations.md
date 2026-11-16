@@ -12,9 +12,11 @@ The bundled Codex workflow uses a 30-second app-server response timeout. This
 allows session initialization to complete for large repository workspaces
 without changing Core's provider-neutral default.
 
-Copy `.env.example` to an external, mode-0600 environment file. The GitLab token
-needs read-only API access. It is used only by `repo_remote_search` and excluded
-from the agent shell. Git checkout, commit, and push authenticate with Git SSH.
+Copy `.env.example` to an external, mode-0600 environment file. Local reference
+search is the default. Set `GITLAB_REMOTE_BLOB_SEARCH_ENABLED=true` only when
+the GitLab blob API is available; the token is then used only by
+`repo_remote_search` and excluded from the agent shell. Git checkout, commit,
+and push authenticate with Git SSH.
 
 Configure the complete local checkout used by `xhigh` tasks in that
 environment file:
@@ -32,6 +34,23 @@ reference only: each task receives an independent checkout under its own
 `workspace/repo`, and no task switches branches or writes files in the shared
 reference working tree. Keep the reference repository available until all
 borrowing task workspaces have been removed.
+
+`repo_remote_search` follows `GITLAB_REMOTE_BLOB_SEARCH_ENABLED`. The
+default `false` searches `SOURCE_REPO_LOCAL_REFERENCE` locally and does not
+call GitLab. Local search requires Python 3, Git, and flock. It first runs
+`repo-full-checkout require-current`, which checks
+and fetches only a missing or stale branch ref, then searches the returned
+commit SHA with `git grep`. The reference worktree can remain on `master`
+while the search reads `v25.4.0/firebase` or another branch. Search covers the
+whole repository object at that SHA; `SOURCE_REPO_PULL_PATHS` limits only the
+task checkout, not this search. Results are capped at the requested count,
+output size (8 MiB), and a 60-second search timeout. Synchronization has a
+600-second total deadline, including the 300-second lock wait. Both deadlines
+terminate child Git/SSH processes. Local search currently accepts branch names;
+it does not resolve tags or commit expressions. A synchronization or search
+failure returns an error and never falls back to GitLab HTTP. Set the switch
+to `true` only when blob search is available; startup then requires
+`GITLAB_API_TOKEN`.
 
 The normalized reasoning effort controls materialization:
 

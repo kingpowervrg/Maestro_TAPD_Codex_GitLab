@@ -1,0 +1,145 @@
+#!/usr/bin/env python3
+"""Bounded object search; never switches or reads the reference worktree."""
+import json
+import os
+from pathlib import Path
+import re
+import selectors
+import signal
+import subprocess
+import sys
+import time
+
+SYNC_TIMEOUT = 600
+SEARCH_TIMEOUT = 60
+MAX_OUTPUT_BYTES = 8 * 1024 * 1024
+SNIPPET_CHARS = 2000
+
+
+class SearchError(Exception):
+    pass
+
+
+def stop(process):
+    # Helpers may have Git/SSH descendants; terminate the entire private group.
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    process.wait()
+
+
+def stream(command, timeout):
+    env = dict(os.environ, GIT_TERMINAL_PROMPT="0", LC_ALL="C")
+    with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                          env=env, start_new_session=True) as process:
+        selector = selectors.DefaultSelector()
+        selector.register(process.stdout, selectors.EVENT_READ)
+        deadline = time.monotonic() + timeout
+        try:
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0 or not selector.select(remaining):
+                    raise SearchError("timeout")
+                chunk = os.read(process.stdout.fileno(), 65536)
+                if not chunk:
+                    status = process.wait(timeout=max(0.001, deadline - time.monotonic()))
+                    if status not in (0, 1):
+                        raise SearchError("failed")
+                    yield status
+                    return
+                yield chunk
+        finally:
+            selector.close()
+            stop(process)
+
+
+def synchronize(reference, remote, ref):
+    helper = str(Path(__file__).resolve().with_name("repo-full-checkout"))
+    output = bytearray()
+    try:
+        for part in stream([helper, "require-current", reference, remote, ref], SYNC_TIMEOUT):
+            if isinstance(part, int):
+                if part != 0:
+                    raise SearchError("failed")
+            else:
+                output.extend(part)
+                if len(output) > 4096:
+                    raise SearchError("failed")
+        sha = output.decode("ascii").strip()
+        if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", sha):
+            raise SearchError("failed")
+        return sha
+    except SearchError as error:
+        raise SearchError("local_search_reference_sync_" + str(error)) from None
+
+
+def grep(reference, sha, query, path, limit):
+    command = ["git", "-C", reference, "grep", "--no-color", "--full-name", "-n",
+               "-I", "-F", "-z", "--max-count=" + str(limit + 1), "-e", query, sha, "--"]
+    if path:
+        command.append(":(top,literal)" + path)
+    matches = []
+    pending = bytearray()
+    total = 0
+    output = stream(command, SEARCH_TIMEOUT)
+    try:
+        for part in output:
+            if isinstance(part, int):
+                if pending:
+                    raise SearchError("invalid_output")
+                return matches, False
+            total += len(part)
+            if total > MAX_OUTPUT_BYTES:
+                return matches, True
+            pending.extend(part)
+            while True:
+                # Git -z uses NUL after filename and line number, newline after
+                # snippet. Filenames may themselves contain colons/newlines.
+                first = pending.find(b"\0")
+                second = pending.find(b"\0", first + 1) if first >= 0 else -1
+                end = pending.find(b"\n", second + 1) if second >= 0 else -1
+                if end < 0:
+                    break
+                qualified = bytes(pending[:first])
+                line = int(pending[first + 1:second])
+                snippet = bytes(pending[second + 1:end])
+                del pending[:end + 1]
+                prefix = sha.encode("ascii") + b":"
+                if not qualified.startswith(prefix):
+                    raise SearchError("invalid_output")
+                filename = qualified[len(prefix):].decode("utf-8", errors="replace")
+                matches.append({"path": filename, "filename": filename.rsplit("/", 1)[-1],
+                                "startline": line,
+                                "snippet": snippet.decode("utf-8", errors="replace")[:SNIPPET_CHARS]})
+                if len(matches) > limit:
+                    return matches[:limit], True
+        raise SearchError("failed")
+    except SearchError as error:
+        raise SearchError("local_code_search_" + str(error)) from None
+    finally:
+        output.close()
+
+
+def main():
+    reference, remote, ref, query, path, raw_limit = sys.argv[1:]
+    limit = int(raw_limit)
+    if not 1 <= limit <= 100:
+        raise SearchError("local_code_search_invalid_limit")
+    sha = synchronize(reference, remote, ref)
+    matches, truncated = grep(reference, sha, query, path, limit)
+    for match in matches:
+        match["ref"] = ref
+    return {"backend": "local_reference", "reference": reference, "ref": ref,
+            "searched_sha": sha, "query": query, "path": path or None,
+            "count": len(matches), "matches": matches, "truncated": truncated}
+
+
+if __name__ == "__main__":
+    try:
+        print(json.dumps({"ok": main()}, ensure_ascii=True))
+    except (SearchError, OSError, ValueError, subprocess.TimeoutExpired) as error:
+        # Never serialize command arguments, credentials, or Git diagnostics.
+        reason = str(error) if isinstance(error, SearchError) else "local_code_search_failed"
+        print(json.dumps({"error": reason}))
+        sys.exit(1)

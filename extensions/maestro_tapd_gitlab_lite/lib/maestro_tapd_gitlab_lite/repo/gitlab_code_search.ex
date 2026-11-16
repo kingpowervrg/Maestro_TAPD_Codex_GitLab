@@ -9,13 +9,7 @@ defmodule MaestroTapdGitlabLite.Repo.GitlabCodeSearch do
 
   @spec enabled?(RepoConfig.t() | map()) :: boolean()
   def enabled?(repo) do
-    repo
-    |> option("remote_code_search")
-    |> normalize_string()
-    |> case do
-      "gitlab" -> true
-      _other -> false
-    end
+    normalize_boolean(option(repo, "remote_blob_search_enabled")) == true
   end
 
   @spec search(RepoConfig.t() | map(), keyword()) :: {:ok, map()} | {:error, term()}
@@ -289,11 +283,31 @@ defmodule MaestroTapdGitlabLite.Repo.GitlabCodeSearch do
   defp normalize_string(value) when is_integer(value), do: Integer.to_string(value)
   defp normalize_string(_value), do: nil
 
+  defp normalize_boolean(value) when is_boolean(value), do: value
+
+  defp normalize_boolean(value) when is_binary(value) do
+    value = String.downcase(String.trim(value))
+    normalize_boolean_value(value)
+  end
+
+  defp normalize_boolean(_value), do: nil
+
+  defp normalize_boolean_value(value) do
+    case value do
+      "true" -> true
+      "false" -> false
+      _other -> nil
+    end
+  end
+
   defp blank_to_nil(""), do: nil
   defp blank_to_nil(value), do: value
 
   defp map_value(map, key) when is_map(map) do
-    Map.get(map, key) || map_get_existing_atom(map, key)
+    case Map.fetch(map, key) do
+      {:ok, value} -> value
+      :error -> map_get_existing_atom(map, key)
+    end
   end
 
   defp map_get_existing_atom(map, key) do

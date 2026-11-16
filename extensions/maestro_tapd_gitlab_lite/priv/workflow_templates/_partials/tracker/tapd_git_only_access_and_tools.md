@@ -18,8 +18,13 @@ For repository actions, use the inventory-listed tools `repo_remote_search`,
 `repo_sparse_add`, `repo_checkout`, `repo_diff`, `repo_commit`, and `repo_push`. Use
 `${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/bin/repo` only for a repo-core operation
 that the inventory does not expose, such as synchronizing the base branch.
-`repo_remote_search` is the sole repo-provider exception. Its GitLab token
-remains in the Maestro service and is excluded from Codex shell environments.
+`repo_remote_search` is the repository search tool. By default it checks
+and fetches a missing or stale requested branch in the complete local
+reference, then searches that exact commit without switching the reference
+worktree. Its scope is independent of `SOURCE_REPO_PULL_PATHS`. Set
+`GITLAB_REMOTE_BLOB_SEARCH_ENABLED=true` only when the GitLab blob API is
+available; its token remains in the Maestro service and is excluded from Codex
+shell environments.
 
 Do not open or follow `${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/skills/repo/push/SKILL.md`:
 that skill owns a change-proposal workflow that is outside this template's

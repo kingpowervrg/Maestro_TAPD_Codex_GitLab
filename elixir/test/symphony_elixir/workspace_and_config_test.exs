@@ -3700,6 +3700,10 @@ defmodule SymphonyElixir.WorkspaceAndConfigTest do
   end
 
   test "dispatch context preserves TAPD Git repo settings for dynamic tool planning" do
+    previous_reference = System.get_env("SOURCE_REPO_LOCAL_REFERENCE")
+    on_exit(fn -> restore_env("SOURCE_REPO_LOCAL_REFERENCE", previous_reference) end)
+    System.put_env("SOURCE_REPO_LOCAL_REFERENCE", System.tmp_dir!())
+
     assert {:ok, template_path} =
              SymphonyElixir.Workflow.Template.resolve("tapd/git/codex")
 

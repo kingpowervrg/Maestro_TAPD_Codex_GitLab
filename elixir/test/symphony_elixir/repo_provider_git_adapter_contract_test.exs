@@ -19,7 +19,11 @@ defmodule SymphonyElixir.RepoProviderGitAdapterContractTest do
   end
 
   test "Lite assembly replaces Git with a read-only search backend" do
-    repo = put_in(adapter_contract_config(), [:provider, :options], %{remote_code_search: "gitlab"})
+    repo =
+      put_in(adapter_contract_config(), [:provider, :options], %{
+        remote_code_search: "gitlab",
+        remote_blob_search_enabled: true
+      })
 
     assert SymphonyElixir.RepoProvider.adapter(repo) ==
              MaestroTapdGitlabLite.Repo.GitlabLiteBackend

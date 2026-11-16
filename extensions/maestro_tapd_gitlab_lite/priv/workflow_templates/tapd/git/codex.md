@@ -90,6 +90,8 @@ repo:
     kind: git
     options:
       remote_code_search: gitlab
+      remote_blob_search_enabled: $GITLAB_REMOTE_BLOB_SEARCH_ENABLED
+      local_search_reference: $SOURCE_REPO_LOCAL_REFERENCE
       gitlab_api_base_url: $GITLAB_API_BASE_URL
       gitlab_project_id: $GITLAB_PROJECT_ID
 hooks:
