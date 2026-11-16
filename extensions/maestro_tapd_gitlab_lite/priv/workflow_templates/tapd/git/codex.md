@@ -215,7 +215,7 @@ hooks:
     # Optional target-repository cleanup belongs here.
 agent:
   execution:
-    max_concurrent_agents: 1
+    max_concurrent_agents: 3
     max_turns: 20
     max_retry_attempts: $SYMPHONY_MAX_RETRY_ATTEMPTS
 agent_provider:

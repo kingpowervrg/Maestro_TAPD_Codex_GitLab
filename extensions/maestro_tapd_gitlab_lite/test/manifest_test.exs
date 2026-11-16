@@ -23,4 +23,10 @@ defmodule MaestroTapdGitlabLite.ManifestTest do
 
     assert template =~ "read_timeout_ms: 30000"
   end
+
+  test "runs up to three TAPD Git tasks concurrently" do
+    template = File.read!("priv/workflow_templates/tapd/git/codex.md")
+
+    assert template =~ "max_concurrent_agents: 3"
+  end
 end
