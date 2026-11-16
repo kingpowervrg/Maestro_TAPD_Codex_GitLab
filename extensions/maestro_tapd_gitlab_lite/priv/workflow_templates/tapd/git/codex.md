@@ -163,8 +163,9 @@ hooks:
     esac
     handoff_recovery=false
     if [ -f .symphony-tapd-workpad.md ] &&
-      grep -q 'published_head_sha' .symphony-tapd-workpad.md &&
-      grep -q 'suggested_mr_title' .symphony-tapd-workpad.md; then
+      grep -Eq '^[[:space:]-]*published_head_sha:[[:space:]]*[[:xdigit:]]{40}([[:space:]]|$)' .symphony-tapd-workpad.md &&
+      grep -Eq '^[[:space:]-]*suggested_mr_title:[[:space:]]*[^[:space:]]' .symphony-tapd-workpad.md &&
+      ! grep -Eq '^[[:space:]-]*suggested_mr_title:[[:space:]]*pending[[:space:]]*$' .symphony-tapd-workpad.md; then
       handoff_recovery=true
       echo "Existing published workpad found; running completion recovery without baseline checkout" >&2
     fi
@@ -178,12 +179,63 @@ hooks:
         "${SOURCE_REPO_LOCAL_REFERENCE:-}" "$SOURCE_REPO_URL" "$task_base_branch"
     fi
     if [ "$handoff_recovery" != true ] && [ "$repo_materialization_mode" != "$expected_repo_materialization_mode" ]; then
-      if [ "$expected_repo_materialization_mode" != "sparse" ] && [ "$repo_materialization_mode" = "missing" ]; then
-        echo "xhigh workspace was not materialized from the complete checkout reference. Remove this workspace and retry." >&2
+      if [ "$expected_repo_materialization_mode" != "sparse" ] && [ "$repo_materialization_mode" = "sparse" ]; then
+        if [ ! -d repo/.git ] || ! sparse_status="$(git -C repo status --porcelain --untracked-files=all)"; then
+          echo "Cannot rematerialize an invalid sparse workspace" >&2
+          exit 74
+        fi
+        if [ -n "$sparse_status" ]; then
+          echo "Cannot rematerialize a dirty sparse workspace as xhigh checkout" >&2
+          exit 74
+        fi
+        if [ -n "$(git -C repo rev-list --max-count=1 HEAD --branches --not --remotes=origin)" ]; then
+          echo "Cannot rematerialize a sparse workspace with local commits as xhigh checkout" >&2
+          exit 74
+        fi
+        echo "Reasoning effort changed to xhigh; rematerializing the clean sparse workspace from the complete checkout reference" >&2
+        full_reference="$("${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/bin/repo-full-checkout" validate-reference "${SOURCE_REPO_LOCAL_REFERENCE:-}" "$SOURCE_REPO_URL")"
+        "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/bin/repo-full-checkout" require-current \
+          "$full_reference" "$SOURCE_REPO_URL" "$task_base_branch"
+        sparse_backup="${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/repo-sparse-before-xhigh"
+        if [ -e "$sparse_backup" ]; then
+          echo "Sparse workspace backup already exists; inspect it before retrying" >&2
+          exit 74
+        fi
+        mv -- repo "$sparse_backup"
+        rm -f -- "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/repo-materialization-mode" \
+          "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/repo-materialization-paths"
+        configured_pull_paths="${SOURCE_REPO_PULL_PATHS:-}"
+        if [ -n "$(printf '%s' "$configured_pull_paths" | tr -d '[:space:]')" ]; then
+          printf '%s\n' partial-initializing > "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/repo-materialization-mode"
+          printf '%s\n' "$configured_pull_paths" > "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/repo-materialization-paths"
+          "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/bin/repo-full-checkout" materialize \
+            "$full_reference" "$SOURCE_REPO_URL" repo "$task_base_branch" "$configured_pull_paths"
+          printf '%s\n' partial > "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/repo-materialization-mode"
+        else
+          printf '%s\n' full-initializing > "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/repo-materialization-mode"
+          "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/bin/repo-full-checkout" materialize \
+            "$full_reference" "$SOURCE_REPO_URL" repo "$task_base_branch"
+          printf '%s\n' full > "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/repo-materialization-mode"
+        fi
+        repo_materialization_mode="$(cat "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/repo-materialization-mode")"
+        project_subdir="${SOURCE_REPO_PROJECT_SUBDIR:-}"
+        if [ -z "$project_subdir" ] || [ "$project_subdir" = "." ]; then
+          project_root="$PWD/repo"
+        else
+          case "$project_subdir" in
+            /*|../*|*/../*|*/..) echo "SOURCE_REPO_PROJECT_SUBDIR must be a relative path below repo/" >&2; exit 64 ;;
+          esac
+          project_root="$PWD/repo/$project_subdir"
+        fi
+        "${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/bin/repo-full-checkout" install-agent-context "$project_root" "$PWD"
       else
-        echo "Existing workspace repository materialization does not match the current reasoning effort" >&2
+        if [ "$expected_repo_materialization_mode" != "sparse" ] && [ "$repo_materialization_mode" = "missing" ]; then
+          echo "xhigh workspace was not materialized from the complete checkout reference. Remove this workspace and retry." >&2
+        else
+          echo "Existing workspace repository materialization does not match the current reasoning effort" >&2
+        fi
+        exit 74
       fi
-      exit 74
     fi
     if [ "$handoff_recovery" != true ] && [ "$repo_materialization_mode" = "partial" ]; then
       configured_pull_paths="${SOURCE_REPO_PULL_PATHS:-}"

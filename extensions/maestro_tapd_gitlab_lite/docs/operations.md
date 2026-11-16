@@ -73,7 +73,9 @@ remove that stale issue workspace through the normal Maestro cleanup path and
 let the next attempt recreate it. A missing or stale reference branch must be
 updated in `SOURCE_REPO_LOCAL_REFERENCE` first.
 
-A retained workspace whose `.symphony-tapd-workpad.md` already records `published_head_sha` and `suggested_mr_title` is completion recovery. Its `before_run` hook does not refresh `SOURCE_REPO_LOCAL_REFERENCE` or fetch the development baseline. New and incomplete checkouts still require the reference to match the remote.
+A retained workspace whose `.symphony-tapd-workpad.md` records a 40-digit `published_head_sha` and a nonempty, non-`pending` `suggested_mr_title` is completion recovery. Placeholder fields with `pending` values do not qualify. Its `before_run` hook does not refresh `SOURCE_REPO_LOCAL_REFERENCE` or fetch the development baseline. New and incomplete checkouts still require the reference to match the remote.
+
+If an incomplete workspace was created in sparse mode and the task later switches to `xhigh`, `before_run` rematerializes it from the complete local reference when the sparse checkout is clean and has no local commits absent from its origin refs. `SOURCE_REPO_PULL_PATHS` selects partial checkout; otherwise it creates a full checkout. The old repository, including ignored files, is retained at `${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/repo-sparse-before-xhigh`. Target guidance and skills are installed before the agent starts. Dirty or invalid workspaces and workspaces with local commits remain blocked to protect work; published completion recovery preserves the existing checkout. A stale reference or failed materialization also blocks the turn without falling back to blob search.
 
 The company policy requires a configured workflow field. Bugs use the Bug field;
 Stories use the task field. Only active work items whose configured value is
