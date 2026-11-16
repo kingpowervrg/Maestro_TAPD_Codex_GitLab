@@ -37,16 +37,23 @@ The normalized reasoning effort controls materialization:
 
 - `xhigh` creates an independent shared clone from
   `SOURCE_REPO_LOCAL_REFERENCE` and checks out the TAPD `代码分支` when
-  present, otherwise `SOURCE_REPO_BASE_BRANCH`. The reference must already
-  contain that exact remote SHA, normally as `refs/remotes/origin/<branch>`.
-  Preparation compares it with `git ls-remote` and does not fetch objects from
-  GitLab inside the task workspace. When the reference is missing or behind,
-  update it without switching its worktree, then retry:
+  present, otherwise `SOURCE_REPO_BASE_BRANCH`. The reference normally contains
+  that branch as `refs/remotes/origin/<branch>`. Preparation compares it with
+  `git ls-remote` and automatically fetches a missing or stale branch into the
+  reference repository. It never fetches objects from GitLab inside the task
+  workspace or switches the reference worktree. The equivalent manual command
+  is:
 
   ```bash
   git -C "$SOURCE_REPO_LOCAL_REFERENCE" fetch origin \
     "+refs/heads/<branch>:refs/remotes/origin/<branch>"
   ```
+
+  Concurrent checks share a lock in the reference Git common directory, with
+  a 300-second lock wait limit. After acquiring the lock, preparation compares
+  SHAs again; a current reference skips fetch. Fetch updates only the requested
+  remote-tracking ref and preserves the reference worktree, local branches, and
+  `FETCH_HEAD`. A failed fetch or a SHA mismatch after fetching blocks the turn.
 
   If `SOURCE_REPO_PULL_PATHS` is set, Git sparse checkout expands only the
   listed directories and all of their descendants. If it is empty, the task
@@ -67,15 +74,16 @@ task no longer spends that window fetching a branch from GitLab; refresh the
 local reference before dispatch when its SHA is behind.
 
 Repository materialization is fixed when an issue workspace is first created.
-If a retained workspace was created at a different reasoning level, the
-`before_run` guard fails instead of silently mixing sparse and complete modes;
-remove that stale issue workspace through the normal Maestro cleanup path and
-let the next attempt recreate it. A missing or stale reference branch must be
-updated in `SOURCE_REPO_LOCAL_REFERENCE` first.
+If a retained workspace was created at a different reasoning level,
+`before_run` migrates a clean sparse workspace to the required xhigh mode. A
+missing or stale reference branch is automatically fetched into
+`SOURCE_REPO_LOCAL_REFERENCE` before materialization. Other incompatible modes,
+dirty workspaces, and incomplete materializations remain blocked and must be
+removed through the normal Maestro cleanup path.
 
-A retained workspace whose `.symphony-tapd-workpad.md` records a 40-digit `published_head_sha` and a nonempty, non-`pending` `suggested_mr_title` is completion recovery. Placeholder fields with `pending` values do not qualify. Its `before_run` hook does not refresh `SOURCE_REPO_LOCAL_REFERENCE` or fetch the development baseline. New and incomplete checkouts still require the reference to match the remote.
+A retained workspace whose `.symphony-tapd-workpad.md` records a 40-digit `published_head_sha` and a nonempty, non-`pending` `suggested_mr_title` is completion recovery. Placeholder fields with `pending` values do not qualify. Its `before_run` hook does not refresh `SOURCE_REPO_LOCAL_REFERENCE` or fetch the development baseline. New and incomplete checkouts still compare the reference with the remote.
 
-If an incomplete workspace was created in sparse mode and the task later switches to `xhigh`, `before_run` rematerializes it from the complete local reference when the sparse checkout is clean and has no local commits absent from its origin refs. `SOURCE_REPO_PULL_PATHS` selects partial checkout; otherwise it creates a full checkout. The old repository, including ignored files, is retained at `${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/repo-sparse-before-xhigh`. Target guidance and skills are installed before the agent starts. Dirty or invalid workspaces and workspaces with local commits remain blocked to protect work; published completion recovery preserves the existing checkout. A stale reference or failed materialization also blocks the turn without falling back to blob search.
+If an incomplete workspace was created in sparse mode and the task later switches to `xhigh`, `before_run` rematerializes it from the complete local reference when the sparse checkout is clean and has no local commits absent from its origin refs. `SOURCE_REPO_PULL_PATHS` selects partial checkout; otherwise it creates a full checkout. The old repository, including ignored files, is retained at `${SYMPHONY_WORKSPACE_AUTOMATION_DIR}/repo-sparse-before-xhigh`. Target guidance and skills are installed before the agent starts. Dirty or invalid workspaces and workspaces with local commits remain blocked to protect work; published completion recovery preserves the existing checkout. Failed reference synchronization or materialization also blocks the turn without falling back to blob search.
 
 The company policy requires a configured workflow field. Bugs use the Bug field;
 Stories use the task field. Only active work items whose configured value is

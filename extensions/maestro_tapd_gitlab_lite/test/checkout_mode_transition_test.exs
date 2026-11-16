@@ -83,17 +83,45 @@ defmodule MaestroTapdGitlabLite.CheckoutModeTransitionTest do
     assert marker(context) == "sparse"
   end
 
-  test "a stale reference blocks migration and leaves the old repository intact", context do
+  test "refreshes a stale reference before migration", context do
+    reference_head = String.trim(run!("git", ["-C", context.reference, "rev-parse", "HEAD"]))
     run!("git", ["clone", context.remote, Path.join(context.root, "updater")])
     updater = Path.join(context.root, "updater")
     run!("git", ["-C", updater, "config", "user.name", "Maestro Test"])
     run!("git", ["-C", updater, "config", "user.email", "maestro@example.invalid"])
     run!("git", ["-C", updater, "commit", "--allow-empty", "-m", "New baseline"])
     run!("git", ["-C", updater, "push", "origin", "HEAD"])
-    assert {output, 74} = hook(context)
-    assert output =~ "Update SOURCE_REPO_LOCAL_REFERENCE"
+    assert {output, 0} = hook(context)
+    assert output =~ "rematerializing the clean sparse workspace"
+    assert marker(context) == "full"
+
+    assert String.trim(run!("git", ["-C", context.repo, "rev-parse", "HEAD"])) ==
+             String.trim(run!("git", ["-C", updater, "rev-parse", "HEAD"]))
+
+    assert String.trim(run!("git", ["-C", context.reference, "rev-parse", "HEAD"])) == reference_head
+    assert File.exists?(Path.join(context.automation, "repo-sparse-before-xhigh"))
+    assert String.trim(run!("git", ["-C", context.reference, "branch", "--show-current"])) == @branch
+  end
+
+  test "a missing remote branch blocks before replacing the sparse repository", context do
+    assert {output, 1} = hook(context, [{"SYMPHONY_ISSUE_BRANCH_NAME", "missing/branch"}])
+    assert output =~ "Unable to resolve origin/missing/branch"
     assert marker(context) == "sparse"
     refute File.exists?(Path.join(context.automation, "repo-sparse-before-xhigh"))
+  end
+
+  test "a rejected fetch blocks before replacing the sparse repository", context do
+    run!("git", ["-C", context.reference, "update-ref", "-d", "refs/remotes/origin/#{@branch}"])
+    run!("git", ["-C", context.reference, "branch", "-m", "master"])
+    rejection_hook = Path.join(context.reference, ".git/hooks/reference-transaction")
+    File.write!(rejection_hook, "#!/bin/sh\nexit 1\n")
+    File.chmod!(rejection_hook, 0o755)
+
+    assert {output, 74} = hook(context)
+    assert output =~ "Unable to update the complete checkout reference"
+    assert marker(context) == "sparse"
+    refute File.exists?(Path.join(context.automation, "repo-sparse-before-xhigh"))
+    assert String.trim(run!("git", ["-C", context.reference, "branch", "--show-current"])) == "master"
   end
 
   defp hook(context, overrides \\ []) do

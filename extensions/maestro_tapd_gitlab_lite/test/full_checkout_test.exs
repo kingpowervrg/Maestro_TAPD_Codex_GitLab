@@ -40,7 +40,7 @@ defmodule MaestroTapdGitlabLite.RepoBootstrap.FullCheckoutTest do
     assert output =~ "must not be a promisor clone"
   end
 
-  test "checks out a reference branch locally and refuses to fetch it inside the task" do
+  test "fetches a missing reference branch without switching its worktree" do
     root = tmp_dir!("full-checkout-development-branch")
     remote = Path.join(root, "remote.git")
     seed = Path.join(root, "seed")
@@ -63,25 +63,25 @@ defmodule MaestroTapdGitlabLite.RepoBootstrap.FullCheckoutTest do
     run!("git", ["-C", seed, "commit", "-m", "Development branch content"])
     run!("git", ["-C", seed, "push", "origin", "v22.0/god"])
 
-    assert {missing_output, 74} =
-             System.cmd(
-               @helper,
-               ["materialize", reference, remote, "task-checkout", "v22.0/god"],
-               cd: root,
-               stderr_to_stdout: true
-             )
+    reference_head = String.trim(run!("git", ["-C", reference, "rev-parse", "HEAD"]))
+    File.write!(Path.join(reference, "shared.txt"), "local master edits\n")
+    File.write!(Path.join(reference, "local.txt"), "untracked local file\n")
+    File.write!(Path.join(reference, ".git/FETCH_HEAD"), "preserve user's fetch head\n")
 
-    assert missing_output =~ "Refusing to fetch the branch inside the task workspace"
-    refute File.exists?(task_checkout)
-    assert String.trim(run!("git", ["-C", reference, "branch", "--show-current"])) == "master"
+    results =
+      1..3
+      |> Task.async_stream(fn _ ->
+        System.cmd(@helper, ["require-current", reference, remote, "v22.0/god"], stderr_to_stdout: true)
+      end)
+      |> Enum.map(fn {:ok, {output, 0}} -> output end)
 
-    run!(
-      "git",
-      ["-C", reference, "fetch", "origin", "+refs/heads/v22.0/god:refs/remotes/origin/v22.0/god"]
-    )
-
-    assert String.trim(run!("git", ["-C", reference, "branch", "--show-current"])) == "master"
+    assert Enum.count(results, &String.contains?(&1, "Synchronizing complete checkout reference")) == 1
     run!(@helper, ["materialize", reference, remote, "task-checkout", "v22.0/god"], cd: root)
+    assert String.trim(run!("git", ["-C", reference, "branch", "--show-current"])) == "master"
+    assert String.trim(run!("git", ["-C", reference, "rev-parse", "HEAD"])) == reference_head
+    assert File.read!(Path.join(reference, "shared.txt")) == "local master edits\n"
+    assert File.read!(Path.join(reference, "local.txt")) == "untracked local file\n"
+    assert File.read!(Path.join(reference, ".git/FETCH_HEAD")) == "preserve user's fetch head\n"
 
     assert String.trim(run!("git", ["-C", task_checkout, "branch", "--show-current"])) == "v22.0/god"
     assert File.read!(Path.join(task_checkout, "shared.txt")) == "master content\n"
@@ -102,17 +102,8 @@ defmodule MaestroTapdGitlabLite.RepoBootstrap.FullCheckoutTest do
     run!("git", ["-C", seed, "add", "branch.txt"])
     run!("git", ["-C", seed, "commit", "-m", "Update development branch"])
     run!("git", ["-C", seed, "push", "origin", "v22.0/god"])
-    assert {stale_output, 74} =
-             System.cmd(@helper, ["refresh-task-ref", reference, remote, task_checkout, "v22.0/god"],
-               stderr_to_stdout: true
-             )
-    assert stale_output =~ "Refusing to fetch the branch inside the task workspace"
     previous_head =
       String.trim(run!("git", ["-C", task_checkout, "rev-parse", "refs/remotes/origin/v22.0/god"]))
-    run!(
-      "git",
-      ["-C", reference, "fetch", "origin", "+refs/heads/v22.0/god:refs/remotes/origin/v22.0/god"]
-    )
     run!(@helper, ["refresh-task-ref", reference, remote, task_checkout, "v22.0/god"])
     updated_ref =
       String.trim(run!("git", ["-C", task_checkout, "rev-parse", "refs/remotes/origin/v22.0/god"]))

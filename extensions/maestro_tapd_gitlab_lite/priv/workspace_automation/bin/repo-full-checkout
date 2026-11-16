@@ -11,8 +11,8 @@ Usage:
   repo-full-checkout install-agent-context <project-root> <workspace-root>
 
 Validates a complete local Git reference repository and materializes an
-independent task checkout from it. The requested branch must already exist in
-the reference at the same SHA as the remote; this helper never fetches that
+independent task checkout from it. The requested branch is synchronized in the
+reference repository when missing or stale; this helper never fetches that
 branch into the task workspace. Sparse checkout paths are optional. It can also
 expose repository-owned agent guidance and skills before Codex starts.
 EOF
@@ -151,7 +151,20 @@ reference_update_command() {
   printf 'git -C "%s" fetch origin "+refs/heads/%s:refs/remotes/origin/%s"' "$reference_repo" "$branch" "$branch"
 }
 
-require_current() {
+refresh_reference_branch() {
+  reference_repo="$1"
+  branch="$2"
+  update_command="$(reference_update_command "$reference_repo" "$branch")"
+
+  echo "Synchronizing complete checkout reference for $branch" >&2
+  if ! GIT_TERMINAL_PROMPT=0 git -C "$reference_repo" fetch \
+    --no-tags --no-write-fetch-head --no-auto-maintenance --recurse-submodules=no origin \
+    "+refs/heads/$branch:refs/remotes/origin/$branch" >&2; then
+    fail "Unable to update the complete checkout reference for $branch. Run this command manually: $update_command" 74
+  fi
+}
+
+require_current() (
   reference_repo="$1"
   remote_url="$2"
   branch="$3"
@@ -163,22 +176,26 @@ require_current() {
     fail "Invalid task checkout branch: $branch"
 
   reference_repo="$(validate_reference "$reference_repo" "$remote_url")"
-  update_command="$(reference_update_command "$reference_repo" "$branch")"
-
-  if ! local_sha="$(reference_branch_sha "$reference_repo" "$branch")"; then
-    fail "Complete checkout reference has no refs/remotes/origin/$branch or refs/heads/$branch. Update it without switching its worktree: $update_command. Refusing to fetch the branch inside the task workspace." 74
-  fi
-
+  reference_git_dir="$(git -C "$reference_repo" rev-parse --path-format=absolute --git-common-dir)"
+  exec 9>"$reference_git_dir/maestro-reference-sync.lock"
+  flock -w 300 9 || fail "Timed out waiting for complete checkout reference synchronization lock" 75
+  local_sha="$(reference_branch_sha "$reference_repo" "$branch" || true)"
   if ! remote_sha="$(remote_branch_sha "$remote_url" "$branch")"; then
     fail "Unable to resolve origin/$branch" 1
   fi
 
   if [ "$local_sha" != "$remote_sha" ]; then
-    fail "Complete checkout reference for $branch is $local_sha but origin/$branch is $remote_sha. Update SOURCE_REPO_LOCAL_REFERENCE without switching its worktree: $update_command. Refusing to fetch the branch inside the task workspace." 74
+    refresh_reference_branch "$reference_repo" "$branch"
+    local_sha="$(reference_branch_sha "$reference_repo" "$branch" || true)"
+    remote_sha="$(remote_branch_sha "$remote_url" "$branch" || true)"
+  fi
+
+  if [ -z "$local_sha" ] || [ "$local_sha" != "$remote_sha" ]; then
+    fail "Complete checkout reference for $branch is not current after fetch. Update SOURCE_REPO_LOCAL_REFERENCE manually and retry." 74
   fi
 
   printf '%s\n' "$local_sha"
-}
+)
 
 refresh_task_ref() {
   reference_repo="$1"
@@ -237,8 +254,8 @@ materialize() {
   trap cleanup_materialization EXIT HUP INT TERM
 
   # Compare the reference with the remote before creating any task checkout.
-  # Object transfer stays outside the task: a stale or missing branch must be
-  # fetched into the reference repository, never with a filtered task fetch.
+  # Synchronize stale or missing branches in the reference repository before
+  # creating the task checkout. Never perform a filtered task fetch.
   local_sha="$(require_current "$reference_repo" "$remote_url" "$branch")"
 
   GIT_LFS_SKIP_SMUDGE=1 git clone --shared --no-checkout -- "$reference_repo" "$initializing_path"
@@ -315,7 +332,7 @@ EOF
   install_skill_root "$project_root/.agents/skills" "agents" "$workspace_root/.codex/skills"
 }
 
-for executable in git cp mv rm; do
+for executable in git cp mv rm flock; do
   command -v "$executable" >/dev/null 2>&1 || fail "repo-full-checkout requires $executable" 127
 done
 
