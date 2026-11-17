@@ -73,6 +73,7 @@ defmodule MaestroTapdGitlabLite.Repo.LocalCodeSearch do
 
   defp search_path(repo, opts) do
     case Keyword.fetch(opts, :path) do
+      {:ok, nil} -> default_search_path(repo)
       {:ok, value} -> path_prefix(value)
       :error -> default_search_path(repo)
     end

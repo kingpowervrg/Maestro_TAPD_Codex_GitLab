@@ -131,6 +131,15 @@ defmodule MaestroTapdGitlabLite.Repo.LocalCodeSearchTest do
     assert result["path"] == "Game"
     assert Enum.map(result["matches"], & &1["path"]) == ["Game/Assets/UnitGroup.cs"]
 
+    assert {:ok, nil_path_result} =
+             LocalCodeSearch.search(search_repo,
+               query: "GetUnitDicInfo",
+               ref: "master",
+               path: nil
+             )
+
+    assert nil_path_result["path"] == "Game"
+
     assert {:ok, explicit_result} =
              LocalCodeSearch.search(search_repo,
                query: "GetUnitDicInfo",
