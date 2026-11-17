@@ -757,7 +757,7 @@ defmodule SymphonyElixir.TapdAdapterTest do
     issue_id = "1153000000000000100"
     workpad_id = "tapd:issue:#{issue_id}:workpad"
     provider_comment_id = "1153000000000000999"
-    final_workpad = "## Workpad\n\n### Plan\n\n- [x] Complete the TAPD AI workflow — read-back verified"
+    final_workpad = completed_workpad_body()
     bug_reads = :atomics.new(1, signed: false)
 
     register_tapd_workpad!(issue_id, provider_comment_id)
@@ -860,7 +860,7 @@ defmodule SymphonyElixir.TapdAdapterTest do
     response =
       Bridge.execute(
         "tapd_complete_ai_workflow",
-        %{"issue_id" => issue_id, "workpad_id" => workpad_id, "body" => "final body"},
+        %{"issue_id" => issue_id, "workpad_id" => workpad_id, "body" => completed_workpad_body()},
         request_fun: fn request ->
           send(test_pid, {:tapd_stale_readback_request, request})
 
@@ -1802,5 +1802,25 @@ defmodule SymphonyElixir.TapdAdapterTest do
               code: ^code,
               details: %{source_reason: ^source_reason}
             }} = Config.validate!()
+  end
+
+  defp completed_workpad_body do
+    """
+    ## Workpad
+    ### Plan
+    - [x] Complete the TAPD AI workflow — read-back verified
+    ### Acceptance Criteria
+    - [x] Regression fixed
+    ### Validation
+    - [x] Targeted validation passed
+    ### Git Handoff
+    - repository: example/repo
+    - branch_name: maestro/tapd-test
+    - commit_sha: #{String.duplicate("a", 40)}
+    - published_head_sha: #{String.duplicate("a", 40)}
+    - suggested_mr_title: Fix regression
+    - suggested_mr_description: Handle duplicate entries.
+    """
+    |> String.trim()
   end
 end

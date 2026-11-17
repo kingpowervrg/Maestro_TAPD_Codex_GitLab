@@ -495,6 +495,7 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
          {:ok, completion} <-
            IssuePolicyRuntime.complete(tracker, %{
              issue: issue,
+             workpad_body: args.body,
              fetch_issue: fn -> fetch_issue(tracker, args.issue_id, opts) end,
              update_fields: fn fields -> update_issue_fields(tracker, issue, fields, opts) end
            }),

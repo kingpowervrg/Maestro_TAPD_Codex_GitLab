@@ -144,3 +144,14 @@ Disable Mode A by removing these four assembly registrations from runtime
 configuration: workflow registry source, Git adapter override, issue policy,
 and workspace automation source. Mode C then uses the built-in TAPD + GitHub
 behavior and requires no GitLab credentials or object-cache configuration.
+
+Completion validates the submitted final workpad before changing the AI workflow
+field. `Plan`, `Acceptance Criteria`, and `Validation` must each contain checked
+items and no unchecked items; `Confusions` must have no unresolved checklist
+items. All six `Git Handoff` fields must be populated, including the working
+branch, full commit SHA, and equal published SHA. Incomplete submissions return
+`invalid_arguments` with the missing requirement and perform no workflow-field
+write. This validates the handoff document; agents still must run validation and
+verify the remote push before submitting it. Workpad identity remains registry
+based, independent of its Markdown sections. Previously resolved tasks are not
+modified automatically by this guard.

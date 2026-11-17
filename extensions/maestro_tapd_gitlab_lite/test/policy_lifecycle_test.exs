@@ -25,10 +25,24 @@ defmodule MaestroTapdGitlabLite.Tracker.PolicyLifecycleTest do
              PolicyLifecycle.complete(%{
                tracker: tracker,
                issue: issue,
+               workpad_body: valid_handoff(),
                update_fields: fn _fields ->
                  flunk("must not update a story through the bug field")
                end,
                fetch_issue: fn -> flunk("must not read back before selecting a story field") end
+             })
+  end
+
+  test "completion rejects a workpad without published Git handoff" do
+    issue = issue("bug", "new", "接受/处理")
+
+    assert {:error, {:invalid_arguments, _}} =
+             PolicyLifecycle.complete(%{
+               tracker: tracker("bug", "custom_field_6", "new"),
+               issue: issue,
+               workpad_body: "- branch_name: pending\n- commit_sha: pending\n- published_head_sha: pending",
+               update_fields: fn _fields -> flunk("must not update before handoff validation") end,
+               fetch_issue: fn -> flunk("must not read back before handoff validation") end
              })
   end
 
@@ -39,6 +53,7 @@ defmodule MaestroTapdGitlabLite.Tracker.PolicyLifecycleTest do
     context = %{
       tracker: tracker(entity_type, field, state),
       issue: issue,
+      workpad_body: valid_handoff(),
       update_fields: fn fields ->
         send(parent, {:updated_fields, fields})
         :ok
@@ -86,5 +101,24 @@ defmodule MaestroTapdGitlabLite.Tracker.PolicyLifecycleTest do
         }
       }
     }
+  end
+
+  defp valid_handoff do
+    """
+    ## Workpad
+    ### Plan
+    - [x] Implement, validate, commit, publish, complete AI workflow
+    ### Acceptance Criteria
+    - [x] Duplicate entries are handled
+    ### Validation
+    - [x] Targeted checks passed
+    ### Git Handoff
+    - repository: org/repo
+    - branch_name: `maestro/tapd-test`
+    - commit_sha: `#{String.duplicate("a", 40)}`
+    - published_head_sha: `#{String.duplicate("a", 40)}`
+    - suggested_mr_title: Fix duplicate handling
+    - suggested_mr_description: Ignore duplicate entries while preserving unique entries.
+    """
   end
 end

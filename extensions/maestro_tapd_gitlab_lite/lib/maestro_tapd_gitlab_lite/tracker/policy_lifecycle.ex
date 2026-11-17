@@ -7,6 +7,7 @@ defmodule MaestroTapdGitlabLite.Tracker.PolicyLifecycle do
   def complete(context) do
     with {:ok, issue} <- required_issue(context),
          tracker when is_map(tracker) <- Map.get(context, :tracker),
+         :ok <- MaestroTapdGitlabLite.Tracker.WorkpadCompletion.validate(Map.get(context, :workpad_body)),
          :ok <- validate_active_issue(issue, tracker),
          :ok <- validate_current_value(issue, tracker, :complete),
          :ok <- maybe_update(issue, tracker, context, PolicyConfig.resolved_value(tracker)),
