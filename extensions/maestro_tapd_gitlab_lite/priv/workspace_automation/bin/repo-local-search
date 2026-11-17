@@ -56,9 +56,12 @@ def stream(command, timeout):
 
 def synchronize(reference, remote, ref):
     helper = str(Path(__file__).resolve().with_name("repo-full-checkout"))
+    if not os.path.isfile(helper):
+        raise SearchError("local_search_reference_sync_helper_unavailable")
     output = bytearray()
     try:
-        for part in stream([helper, "require-current", reference, remote, ref], SYNC_TIMEOUT):
+        # Escript extraction preserves file contents but not executable bits.
+        for part in stream(["bash", helper, "require-current", reference, remote, ref], SYNC_TIMEOUT):
             if isinstance(part, int):
                 if part != 0:
                     raise SearchError("failed")

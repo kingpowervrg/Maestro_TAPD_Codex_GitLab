@@ -20,21 +20,32 @@ defmodule MaestroTapdGitlabLite.Repo.LocalCodeSearch do
   def search(_repo, _opts), do: {:error, :invalid_local_code_search_invocation}
 
   defp run_search(args) do
-    helper =
-      :maestro_tapd_gitlab_lite
-      |> :code.priv_dir()
-      |> to_string()
-      |> Path.join("workspace_automation/bin/repo-local-search")
+    helper = helper_path()
 
-    {output, _status} = System.cmd("python3", [helper | args])
+    case System.cmd("python3", [helper | args], stderr_to_stdout: true) do
+      {output, _status} -> decode_search_output(output)
+    end
+  rescue
+    error -> {:error, {:local_code_search_unavailable, Exception.message(error)}}
+  end
 
+  defp decode_search_output(output) do
     case :json.decode(output) do
       %{"ok" => result} when is_map(result) -> {:ok, result}
       %{"error" => reason} -> {:error, {:local_code_search_failed, reason}}
-      _other -> {:error, :local_code_search_invalid_response}
+      _other -> {:error, {:local_code_search_invalid_response, String.slice(output, 0, 500)}}
     end
   rescue
-    _error -> {:error, :local_code_search_unavailable}
+    error -> {:error, {:local_code_search_invalid_response, Exception.message(error)}}
+  end
+
+  defp helper_path do
+    Path.join(priv_root(), "workspace_automation/bin/repo-local-search")
+  end
+
+  defp priv_root do
+    priv_dir = :maestro_tapd_gitlab_lite |> :code.priv_dir() |> to_string()
+    if File.dir?(priv_dir), do: priv_dir, else: SymphonyElixir.Platform.PrivAssets.app_priv_root!(".", otp_app: :maestro_tapd_gitlab_lite)
   end
 
   defp reference_path(repo) do
