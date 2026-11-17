@@ -10,7 +10,7 @@ defmodule MaestroTapdGitlabLite.Repo.LocalCodeSearch do
          {:ok, ref} <-
            required_string(Keyword.get(opts, :ref) || field(repo, :base_branch), "ref"),
          {:ok, limit} <- result_limit(opts),
-         {:ok, path} <- path_prefix(opts),
+         {:ok, path} <- search_path(repo, opts),
          {:ok, reference} <- reference_path(repo),
          {:ok, remote} <- required_string(repo |> field(:remote) |> field(:url), "remote URL") do
       run_search([reference, remote, ref, query, path || "", Integer.to_string(limit)])
@@ -71,8 +71,23 @@ defmodule MaestroTapdGitlabLite.Repo.LocalCodeSearch do
     end
   end
 
-  defp path_prefix(opts) do
-    case normalize_string(Keyword.get(opts, :path)) do
+  defp search_path(repo, opts) do
+    case Keyword.fetch(opts, :path) do
+      {:ok, value} -> path_prefix(value)
+      :error -> default_search_path(repo)
+    end
+  end
+
+  defp default_search_path(repo) do
+    case normalize_string(repo |> field(:provider) |> field(:options) |> field(:local_search_default_path)) do
+      nil -> {:ok, nil}
+      "." -> {:ok, nil}
+      value -> path_prefix(value)
+    end
+  end
+
+  defp path_prefix(value) do
+    case normalize_string(value) do
       nil ->
         {:ok, nil}
 

@@ -98,6 +98,48 @@ defmodule MaestroTapdGitlabLite.Repo.LocalCodeSearchTest do
                ref: "master",
                path: "../secret"
              )
+
+    assert {:error, {:invalid_arguments, _}} =
+             LocalCodeSearch.search(
+               put_in(repo(root, "unused"), [:provider, :options, :local_search_default_path], "../secret"),
+               query: "needle",
+               ref: "master"
+             )
+  end
+
+  test "uses the configured project subdirectory when path is omitted" do
+    root = tmp_dir!()
+    remote = Path.join(root, "remote.git")
+    reference = Path.join(root, "reference")
+    run!("git", ["init", "--bare", "--initial-branch", "master", remote])
+    clone!(remote, reference)
+    File.mkdir_p!(Path.join(reference, "Game/Assets"))
+    File.mkdir_p!(Path.join(reference, "Other"))
+    File.write!(Path.join(reference, "Game/Assets/UnitGroup.cs"), "GetUnitDicInfo();\n")
+    File.write!(Path.join(reference, "Other/UnitGroup.cs"), "GetUnitDicInfo();\n")
+    commit_and_push!(reference, "search fixture")
+
+    search_repo =
+      put_in(repo(reference, remote), [:provider, :options, :local_search_default_path], "Game")
+
+    assert {:ok, result} =
+             LocalCodeSearch.search(search_repo,
+               query: "GetUnitDicInfo",
+               ref: "master"
+             )
+
+    assert result["path"] == "Game"
+    assert Enum.map(result["matches"], & &1["path"]) == ["Game/Assets/UnitGroup.cs"]
+
+    assert {:ok, explicit_result} =
+             LocalCodeSearch.search(search_repo,
+               query: "GetUnitDicInfo",
+               ref: "master",
+               path: "Other"
+             )
+
+    assert explicit_result["path"] == "Other"
+    assert Enum.map(explicit_result["matches"], & &1["path"]) == ["Other/UnitGroup.cs"]
   end
 
   test "searches with read-only helpers as extracted from the escript archive" do

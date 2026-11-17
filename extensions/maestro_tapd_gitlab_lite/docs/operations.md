@@ -24,6 +24,8 @@ environment file:
 ```bash
 SOURCE_REPO_LOCAL_REFERENCE=/home/admin2/workspace_k1/master
 SOURCE_REPO_PROJECT_SUBDIR=Game
+# Default local code-search prefix; avoids scanning large binary asset trees.
+SOURCE_REPO_LOCAL_SEARCH_PATH=Game/Assets/_Script
 # Optional for xhigh; use comma-separated sparse-checkout patterns.
 SOURCE_REPO_PULL_PATHS=Game/.agents,Game/.codex,Game/.cursor,Game/Assets/_Script/*.cs,Game/Assets/_Script/**/*.cs,Game/Docs,Game/AGENTS.md,Game/openspec
 ```
@@ -41,8 +43,13 @@ call GitLab. Local search requires Python 3, Git, and flock. It first runs
 `repo-full-checkout require-current`, which checks
 and fetches only a missing or stale branch ref, then searches the returned
 commit SHA with `git grep`. The reference worktree can remain on `master`
-while the search reads `v25.4.0/firebase` or another branch. Search covers the
-whole repository object at that SHA; `SOURCE_REPO_PULL_PATHS` limits only the
+while the search reads `v25.4.0/firebase` or another branch. When the tool omits
+`path`, search uses `SOURCE_REPO_LOCAL_SEARCH_PATH` as a repository-relative
+prefix. Set it to a source directory such as `Game/Assets/_Script` for large
+Unity repositories; the whole `Game` directory can still exceed the deadline
+because it includes binary assets. An explicit tool `path` overrides this
+default, so agents can search other directories when needed. An empty setting
+or `.` searches the entire branch. `SOURCE_REPO_PULL_PATHS` limits only the
 task checkout, not this search. Results are capped at the requested count,
 output size (8 MiB), and a 60-second search timeout. Synchronization has a
 600-second total deadline, including the 300-second lock wait. Both deadlines
