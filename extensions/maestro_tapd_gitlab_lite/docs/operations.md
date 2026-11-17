@@ -52,6 +52,12 @@ failure returns an error and never falls back to GitLab HTTP. Set the switch
 to `true` only when blob search is available; startup then requires
 `GITLAB_API_TOKEN`.
 
+The service invokes the bundled reference synchronization script through Bash.
+This also works when escript extraction leaves bundled scripts without executable
+permissions. If local search fails immediately in a packaged service while the
+source helper works, check that the service has loaded this version; rebuilding
+the escript alone does not update an already running process.
+
 The normalized reasoning effort controls materialization:
 
 - `xhigh` creates an independent shared clone from

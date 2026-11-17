@@ -100,6 +100,37 @@ defmodule MaestroTapdGitlabLite.Repo.LocalCodeSearchTest do
              )
   end
 
+  test "searches with read-only helpers as extracted from the escript archive" do
+    root = tmp_dir!()
+    remote = Path.join(root, "remote.git")
+    reference = Path.join(root, "reference")
+    run!("git", ["init", "--bare", "--initial-branch", "master", remote])
+    clone!(remote, reference)
+    File.write!(Path.join(reference, "UnitGroup.cs"), "GetUnitDicInfo();\n")
+    commit_and_push!(reference, "search fixture")
+
+    source_bin =
+      :maestro_tapd_gitlab_lite
+      |> :code.priv_dir()
+      |> to_string()
+      |> Path.join("workspace_automation/bin")
+
+    extracted_bin = Path.join(root, "extracted/bin")
+    File.mkdir_p!(extracted_bin)
+
+    for filename <- ["repo-local-search", "repo-full-checkout"] do
+      destination = Path.join(extracted_bin, filename)
+      File.cp!(Path.join(source_bin, filename), destination)
+      File.chmod!(destination, 0o644)
+    end
+
+    helper = Path.join(extracted_bin, "repo-local-search")
+    {output, status} = System.cmd("python3", [helper, reference, remote, "master", "GetUnitDicInfo", "", "20"])
+    assert status == 0, output
+    assert %{"ok" => %{"backend" => "local_reference", "count" => 1}} = :json.decode(output)
+    assert Bitwise.band(File.stat!(Path.join(extracted_bin, "repo-full-checkout")).mode, 0o111) == 0
+  end
+
   defp repo(reference, remote) do
     %{
       base_branch: "master",
