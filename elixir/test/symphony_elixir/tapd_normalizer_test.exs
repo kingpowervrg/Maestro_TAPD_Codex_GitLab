@@ -162,6 +162,17 @@ defmodule SymphonyElixir.TapdNormalizerTest do
     assert absent.branch_name == nil
   end
 
+  test "recognizes a TAPD code branch written without a colon" do
+    issue =
+      Normalizer.normalize_story(%{
+        "id" => "3",
+        "name" => "Branch without punctuation",
+        "description" => "代码分支 v25.4.0/firebase"
+      })
+
+    assert issue.branch_name == "v25.4.0/firebase"
+  end
+
   test "routes a TAPD story only to its configured assignee" do
     matching_filter = %{match_values: MapSet.new(["王权"])}
 
