@@ -162,6 +162,13 @@ defmodule SymphonyElixir.Agent.Runtime.DynamicToolBridge.Transport do
     |> put_issue_metadata(Keyword.get(opts, :issue))
   end
 
+  defp put_issue_metadata(metadata, %{id: id, identifier: identifier, entity_type: entity_type}) do
+    metadata
+    |> put_metadata(:issue_id, id)
+    |> put_metadata(:issue_identifier, identifier)
+    |> put_metadata(:entity_type, entity_type)
+  end
+
   defp put_issue_metadata(metadata, %{id: id, identifier: identifier}) do
     metadata
     |> put_metadata(:issue_id, id)

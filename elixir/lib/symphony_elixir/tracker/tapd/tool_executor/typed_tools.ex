@@ -556,10 +556,10 @@ defmodule SymphonyElixir.Tracker.Tapd.ToolExecutor.TypedTools do
   end
 
   defp fetch_issue(tracker, issue_id, opts) do
-    request_fun = Keyword.get(opts, :request_fun, &Client.Request.default_request/1)
     normalized_id = normalize_issue_id(issue_id)
+    request_opts = Keyword.put(opts, :tracker, tracker)
 
-    case Client.fetch_issues_by_ids([normalized_id], tracker: tracker, request_fun: request_fun) do
+    case Client.fetch_issues_by_ids([normalized_id], request_opts) do
       {:ok, [%Issue{} = issue | _rest]} ->
         {:ok, issue}
 

@@ -74,6 +74,10 @@ defmodule MaestroTapdGitlabLite.Tracker.CompanyTapdIssuePolicy do
   end
 
   @impl true
+  def fetch_issues_by_ids(issue_ids, tracker, opts),
+    do: MaestroTapdGitlabLite.Tracker.IssueReader.fetch_issues_by_ids(issue_ids, tracker, opts)
+
+  @impl true
   def complete(context) when is_map(context),
     do: MaestroTapdGitlabLite.Tracker.PolicyLifecycle.complete(context)
 

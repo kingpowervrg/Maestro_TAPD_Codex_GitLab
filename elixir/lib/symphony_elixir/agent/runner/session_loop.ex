@@ -11,7 +11,9 @@ defmodule SymphonyElixir.Agent.Runner.SessionLoop do
     max_turns = Keyword.get(opts, :max_turns, Config.settings!().agent.execution.max_turns)
 
     issue_state_fetcher =
-      Keyword.get(opts, :issue_state_fetcher, &Tracker.fetch_issue_states_by_ids/1)
+      Keyword.get(opts, :issue_state_fetcher, fn issue_ids ->
+        Tracker.fetch_issue_states_by_ids(issue_ids, entity_type: Map.get(issue, :entity_type))
+      end)
 
     case AgentProvider.start_session(workspace, start_session_opts(opts, worker_host, run_id, issue)) do
       {:ok, session} ->

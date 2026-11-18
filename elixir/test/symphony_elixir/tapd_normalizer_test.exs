@@ -173,6 +173,18 @@ defmodule SymphonyElixir.TapdNormalizerTest do
     assert issue.branch_name == "v25.4.0/firebase"
   end
 
+  test "recognizes a TAPD baseline branch with a parenthesized qualifier" do
+    issue =
+      Normalizer.normalize_story(%{
+        "id" => "333",
+        "name" => "Baseline branch",
+        "status" => "developing",
+        "description" => "【测试环境】：\n代码分支（baseline）：v25.4.0/firebase"
+      })
+
+    assert issue.branch_name == "v25.4.0/firebase"
+  end
+
   test "routes a TAPD story only to its configured assignee" do
     matching_filter = %{match_values: MapSet.new(["王权"])}
 

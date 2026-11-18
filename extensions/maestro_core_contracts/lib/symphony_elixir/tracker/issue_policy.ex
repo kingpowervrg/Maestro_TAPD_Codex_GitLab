@@ -22,5 +22,8 @@ defmodule SymphonyElixir.Tracker.IssuePolicy do
   @callback handle_operator_stop(context()) :: :ok | :unhandled | {:error, term()}
   @callback candidate_scope(String.t(), map()) :: map() | nil
 
-  @optional_callbacks candidate_scope: 2, handle_operator_stop: 1
+  @callback fetch_issues_by_ids([String.t()], map(), keyword()) ::
+              {:ok, [Issue.t()]} | {:error, term()} | :unhandled
+
+  @optional_callbacks candidate_scope: 2, handle_operator_stop: 1, fetch_issues_by_ids: 3
 end

@@ -195,6 +195,39 @@ defmodule SymphonyElixir.TapdClientTest do
     assert bug.custom_fields["AI特殊工作流"] == "AI已解决"
   end
 
+  test "fetch_issue_states_by_ids keeps the Bug when a Story shares its id" do
+    tracker = tapd_tracker(platform: %{"workspace_id" => "53000000", "bug_ai_workflow" => %{"field" => "custom_field_6"}})
+
+    assert {:ok, [bug]} =
+             Client.fetch_issue_states_by_ids(["1154044737001818554"], tracker,
+               entity_type: "bug",
+               request_fun: fn request ->
+                 assert request.url == "https://api.tapd.cn/bugs"
+
+                 {:ok,
+                  %{
+                    status: 200,
+                    body: %{
+                      "status" => 1,
+                      "data" => [
+                        %{
+                          "Bug" => %{
+                            "id" => "1154044737001818554",
+                            "title" => "ChatMiniDlg radar callback",
+                            "status" => "new",
+                            "custom_field_6" => "接受/处理"
+                          }
+                        }
+                      ]
+                    }
+                  }}
+               end
+             )
+
+    assert bug.entity_type == "bug"
+    assert bug.state == "new"
+  end
+
   test "fetch_candidate_issues requests and enforces the configured TAPD assignee" do
     tracker = tapd_tracker(provider: %{"assignee" => "王权"})
     test_pid = self()

@@ -133,7 +133,7 @@ defmodule SymphonyElixir.Orchestrator.PollCycle do
     if running_ids == [] do
       state
     else
-      case Tracker.fetch_issue_states_by_ids(running_ids) do
+      case fetch_running_issue_states(state, running_ids) do
         {:ok, issues} ->
           Running.reconcile_issue_states(issues, state, dispatch_context, running_opts(opts, state))
 
@@ -141,6 +141,27 @@ defmodule SymphonyElixir.Orchestrator.PollCycle do
           Events.emit_reconcile_refresh_failed(state, reason)
           state
       end
+    end
+  end
+
+  defp fetch_running_issue_states(%State{} = state, issue_ids) do
+    issue_ids
+    |> Enum.group_by(&running_issue_entity_type(state, &1))
+    |> Enum.reduce_while({:ok, []}, fn {entity_type, ids}, {:ok, acc} ->
+      case Tracker.fetch_issue_states_by_ids(ids, entity_type: entity_type) do
+        {:ok, issues} -> {:cont, {:ok, acc ++ issues}}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  defp running_issue_entity_type(%State{running: running}, issue_id) do
+    running
+    |> Map.get(issue_id, %{})
+    |> Map.get(:issue)
+    |> case do
+      %{entity_type: entity_type} -> entity_type
+      _other -> nil
     end
   end
 

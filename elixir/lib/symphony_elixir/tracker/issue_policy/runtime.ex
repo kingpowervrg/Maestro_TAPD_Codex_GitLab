@@ -31,6 +31,23 @@ defmodule SymphonyElixir.Tracker.IssuePolicy.Runtime do
     end)
   end
 
+  @spec fetch_issues_by_ids([String.t()], map(), keyword()) ::
+          {:ok, [Issue.t()]} | {:error, term()} | :unhandled
+  def fetch_issues_by_ids(issue_ids, tracker, opts)
+      when is_list(issue_ids) and is_map(tracker) and is_list(opts) do
+    Enum.reduce_while(Registry.matching(tracker), :unhandled, fn policy, :unhandled ->
+      result =
+        if function_exported?(policy, :fetch_issues_by_ids, 3),
+          do: policy.fetch_issues_by_ids(issue_ids, tracker, opts),
+          else: :unhandled
+
+      case result do
+        :unhandled -> {:cont, :unhandled}
+        result -> {:halt, result}
+      end
+    end)
+  end
+
   @spec complete(map(), map()) :: {:ok, term()} | {:error, term()}
   def complete(tracker, context) when is_map(tracker) and is_map(context),
     do: invoke_first(tracker, :complete, context)

@@ -70,6 +70,13 @@ defmodule SymphonyElixir.Tracker.Tapd.Client.Reader do
     tracker = Keyword.fetch!(opts, :tracker)
     normalized_ids = normalize_issue_ids(issue_ids)
 
+    case IssuePolicyRuntime.fetch_issues_by_ids(normalized_ids, tracker, opts) do
+      :unhandled -> fetch_untyped_issues_by_ids(normalized_ids, tracker, opts)
+      result -> result
+    end
+  end
+
+  defp fetch_untyped_issues_by_ids(normalized_ids, tracker, opts) do
     with {:ok, stories} <- do_fetch_stories_by_ids(normalized_ids, tracker, Keyword.get(opts, :request_fun, &Request.default_request/1)),
          missing_ids <- missing_issue_ids(normalized_ids, stories),
          {:ok, bugs} <- maybe_fetch_bugs_by_ids(missing_ids, tracker, opts) do

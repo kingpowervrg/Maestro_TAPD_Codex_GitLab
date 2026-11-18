@@ -924,7 +924,7 @@ defmodule SymphonyElixir.WorkflowTemplatesTest do
     refute before_run =~ "fetch --no-tags origin"
     assert prompt =~ "Story development base"
     assert prompt =~ "final integration branch"
-    assert prompt =~ ~s(identifier: "{{ issue.identifier }}")
+    assert prompt =~ ~s(identifier: "{{ issue.entity_type }}-{{ issue.identifier }}")
     assert prompt =~ "no explicit `branch`"
     assert prompt =~ "never invent a branch name or pass"
     assert prompt =~ "both `identifier` and `branch`"

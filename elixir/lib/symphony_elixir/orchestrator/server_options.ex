@@ -63,6 +63,9 @@ defmodule SymphonyElixir.Orchestrator.ServerOptions do
   def worker_exit_opts do
     [
       fetch_issue_states_by_ids: &Tracker.fetch_issue_states_by_ids/1,
+      fetch_issue_states_with_context: fn ids, issue ->
+        Tracker.fetch_issue_states_by_ids(ids, entity_type: if(is_map(issue), do: Map.get(issue, :entity_type)))
+      end,
       issue_refresh_timeout_ms: @worker_exit_issue_refresh_timeout_ms,
       issue_fact_freshness_ms: @worker_exit_issue_fact_freshness_ms,
       mark_ai_workflow_exception: &Tracker.mark_ai_workflow_exception/1,

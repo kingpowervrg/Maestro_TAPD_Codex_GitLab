@@ -155,3 +155,23 @@ write. This validates the handoff document; agents still must run validation and
 verify the remote push before submitting it. Workpad identity remains registry
 based, independent of its Markdown sections. Previously resolved tasks are not
 modified automatically by this guard.
+
+
+TAPD Bug and Story numeric IDs may collide. Dispatch refresh, running-state
+reconciliation, continuation, worker-exit refresh, and typed issue reads preserve
+the original entity category. Session bridge metadata carries both the issue ID
+and entity type; the company policy uses that type only for the matching issue.
+A known Bug is read from `/bugs` and its comments use `entry_type=bug`; a known
+Story is read from `/stories`. Missing records and API errors never fall back to
+another category. Unknown identities retain the host adapter's existing lookup
+behavior. The same typed reader serves snapshots and completion read-back.
+
+Initial Git Handoff branches include the TAPD entity category in the generated
+identifier. A Bug and Story with the same numeric TAPD ID therefore use distinct
+branches such as `maestro/bug-tapd-115...` and `maestro/story-tapd-115...`.
+Rework rounds continue to reuse the exact `branch_name` recorded in the canonical
+workpad.
+
+After deploying this fix, previously blocked identity-mismatch workpads are
+historical evidence. When the Bug is returned to `接受/处理`, the normal workflow
+rechecks the snapshot, resolves obsolete Confusions, and continues execution.

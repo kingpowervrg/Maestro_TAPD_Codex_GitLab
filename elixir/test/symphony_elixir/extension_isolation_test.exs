@@ -27,6 +27,9 @@ defmodule SymphonyElixir.ExtensionIsolationTest do
 
     @impl true
     def handle_failure(_context), do: :ok
+
+    @impl true
+    def fetch_issues_by_ids(_ids, _tracker, opts), do: Keyword.get(opts, :neutral_result, :unhandled)
   end
 
   setup do
@@ -60,6 +63,18 @@ defmodule SymphonyElixir.ExtensionIsolationTest do
     assert Runtime.complete(tracker, %{result: :done}) == {:ok, :done}
     assert Runtime.handle_failure(tracker, %{}) == :ok
     assert Runtime.handle_operator_stop(tracker, %{}) == :unhandled
+  end
+
+  test "neutral identity resolver treats missing results and errors as authoritative" do
+    Application.put_env(:symphony_elixir, :issue_policies, [NeutralPolicy])
+
+    for result <- [{:ok, []}, {:ok, [%SymphonyElixir.Issue{id: "shared", entity_type: "incident"}]}, {:error, :timeout}] do
+      assert Runtime.fetch_issues_by_ids(["shared"], %{kind: "memory"}, neutral_result: result) == result
+    end
+
+    assert Runtime.fetch_issues_by_ids(["shared"], %{kind: "memory"}, []) == :unhandled
+    Application.put_env(:symphony_elixir, :issue_policies, [])
+    assert Runtime.fetch_issues_by_ids(["shared"], %{kind: "memory"}, []) == :unhandled
   end
 
   test "Mode C disables the package and keeps Core Git/TAPD independent" do

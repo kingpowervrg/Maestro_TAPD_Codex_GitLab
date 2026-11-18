@@ -57,10 +57,11 @@ defmodule SymphonyElixir.Orchestrator.IssueDispatch do
   @spec dispatch_issue(State.t(), Issue.t(), pos_integer() | nil, String.t() | nil) :: State.t()
   def dispatch_issue(%State{} = state, %Issue{} = issue, attempt, preferred_worker_host) do
     dispatch_context = Runtime.dispatch_context()
+    issue_fetcher = issue_state_fetcher(issue)
 
     case Dispatch.revalidate_issue_for_dispatch(
            issue,
-           &Tracker.fetch_issue_states_by_ids/1,
+           issue_fetcher,
            dispatch_context
          ) do
       {:ok, %Issue{} = refreshed_issue} ->
@@ -110,10 +111,18 @@ defmodule SymphonyElixir.Orchestrator.IssueDispatch do
     end
   end
 
+  defp issue_state_fetcher(%Issue{entity_type: entity_type}) do
+    fn issue_ids ->
+      Tracker.fetch_issue_states_by_ids(issue_ids, entity_type: entity_type)
+    end
+  end
+
   defp prepare_and_dispatch(state, refreshed_issue, attempt, preferred_worker_host, dispatch_context) do
+    issue_fetcher = issue_state_fetcher(refreshed_issue)
+
     case Dispatch.prepare_issue_for_dispatch(
            refreshed_issue,
-           &Tracker.fetch_issue_states_by_ids/1,
+           issue_fetcher,
            &Tracker.update_issue_state/2,
            dispatch_context,
            emit_route_transition: &Events.emit_route_transition/7

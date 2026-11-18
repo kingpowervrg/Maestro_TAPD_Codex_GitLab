@@ -173,6 +173,24 @@ defmodule SymphonyElixir.Agent.Runtime.DynamicToolBridgeTest do
   defp restore_application_env(key, nil), do: Application.delete_env(:symphony_elixir, key)
   defp restore_application_env(key, value), do: Application.put_env(:symphony_elixir, key, value)
 
+  test "session bridge retains the entity category in its registered context" do
+    assert {:ok, runtime} =
+             DynamicToolBridge.start(
+               http_port: 4521,
+               tool_context: tool_context(),
+               issue: %{id: "shared", identifier: "N-1", entity_type: "incident"}
+             )
+
+    try do
+      opts = SymphonyElixir.Agent.DynamicTool.Bridge.put_token_context([], runtime.bridge_token)
+      context = Keyword.fetch!(opts, :tool_context)
+      assert SymphonyElixir.Agent.DynamicTool.Context.runtime_metadata_value(context, :issue_id) == "shared"
+      assert SymphonyElixir.Agent.DynamicTool.Context.runtime_metadata_value(context, :entity_type) == "incident"
+    after
+      DynamicToolBridge.stop(runtime)
+    end
+  end
+
   defp tool_context do
     %{
       "source_context" => %{},

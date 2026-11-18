@@ -22,11 +22,11 @@ If delivery evidence is missing, the published SHA differs, or new feedback requ
    Story has no explicit development branch{% endif %} as the development
    base. Synchronize that ref with the repo-core helper when needed, then use
    `repo_checkout` with canonical mode `create_or_switch`,
-   `identifier: "{{ issue.identifier }}"`, no explicit `branch`, and explicit base
+   `identifier: "{{ issue.entity_type }}-{{ issue.identifier }}"`, no explicit `branch`, and explicit base
    {% if issue.branch_name %}`origin/{{ issue.branch_name }}`{% else %}`origin/{{ repo.base_branch }}`{% endif %}
    to create a Story-specific branch without configured-base synchronization
    in that checkout call. Let repo-core derive the working branch from the
-   identifier and configured work prefix; never invent a branch name or pass
+   category-qualified identifier and configured work prefix; never invent a branch name or pass
    both `identifier` and `branch`. Confirm the working branch is neither the
    development base nor final integration branch `{{ repo.base_branch }}` and
    follows the configured work prefix before any commit or push.

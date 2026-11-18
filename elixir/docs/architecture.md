@@ -1638,3 +1638,8 @@ Before merging a structural change, check:
 - Is the root facade still readable and responsibility-focused?
 - Did we avoid introducing a vague catch-all helper module?
 - Are public APIs, docs, and tests still aligned with the new structure?
+
+Issue policies may optionally resolve ID reads with `fetch_issues_by_ids/3`.
+The optional resolver receives caller options preserving known entity identity;
+`:unhandled` retains adapter defaults. Empty results and errors are authoritative.
+Session bridge metadata carries `entity_type` with the issue ID for tool reads.

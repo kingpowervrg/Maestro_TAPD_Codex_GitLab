@@ -64,7 +64,16 @@ defmodule SymphonyElixir.Orchestrator.WorkerExit do
   defp fresh_running_issue_fact?(_running_entry, _opts), do: false
 
   defp do_refresh_exit_issue_state(state, issue_id, running_entry, opts) do
-    case Keyword.get(opts, :fetch_issue_states_by_ids) do
+    fetcher =
+      case Keyword.get(opts, :fetch_issue_states_with_context) do
+        callback when is_function(callback, 2) ->
+          fn ids -> callback.(ids, Map.get(running_entry, :issue)) end
+
+        _other ->
+          Keyword.get(opts, :fetch_issue_states_by_ids)
+      end
+
+    case fetcher do
       fetch_issue_states_by_ids when is_function(fetch_issue_states_by_ids, 1) ->
         timeout_ms = issue_refresh_timeout_ms(opts)
 

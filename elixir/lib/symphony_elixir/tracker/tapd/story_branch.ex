@@ -1,7 +1,7 @@
 defmodule SymphonyElixir.Tracker.Tapd.StoryBranch do
   @moduledoc false
 
-  @branch_label_pattern ~r/(?:代码分支|开发分支|code\s+branch)(?:\s*[:：]\s*|\s+)(.+)/iu
+  @branch_label_pattern ~r/(?:代码分支|开发分支|code\s+branch)(?:\s*[（(][^）)]*[）)])?(?:\s*[:：]\s*|\s+)(.+)/iu
   @html_fragment_pattern ~r/<[a-zA-Z][^>]*>/
   @forbidden_ref_chars ~r/[\x00-\x20\x7f~^:?*\[\\]/u
 

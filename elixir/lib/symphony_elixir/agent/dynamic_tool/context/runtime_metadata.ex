@@ -9,6 +9,7 @@ defmodule SymphonyElixir.Agent.DynamicTool.Context.RuntimeMetadata do
   @thread_id "thread_id"
   @turn_id "turn_id"
   @worker_host "worker_host"
+  @entity_type "entity_type"
 
   @key_by_atom %{
     run_id: @run_id,
@@ -18,7 +19,8 @@ defmodule SymphonyElixir.Agent.DynamicTool.Context.RuntimeMetadata do
     session_id: @session_id,
     thread_id: @thread_id,
     turn_id: @turn_id,
-    worker_host: @worker_host
+    worker_host: @worker_host,
+    entity_type: @entity_type
   }
 
   @type t :: %{String.t() => term()}
@@ -46,6 +48,9 @@ defmodule SymphonyElixir.Agent.DynamicTool.Context.RuntimeMetadata do
 
   @spec worker_host_key() :: String.t()
   def worker_host_key, do: @worker_host
+
+  @spec entity_type_key() :: String.t()
+  def entity_type_key, do: @entity_type
 
   @spec key(atom() | String.t()) :: String.t()
   def key(field) when is_atom(field), do: Map.get(@key_by_atom, field, Atom.to_string(field))
