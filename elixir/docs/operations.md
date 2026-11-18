@@ -162,8 +162,9 @@ export SOURCE_REPO_PROVIDER_REPOSITORY=owner/repo
 ```
 
 For `tapd/git/codex`, `SOURCE_REPO_BASE_BRANCH` is the final human-owned
-integration branch. A Story can select a different development base with an
-explicit description line such as `代码分支： v24.9.0/battle_royale`. Maestro
+integration branch. A Story or Bug can select a different development base
+with an explicit description line such as `代码分支： v24.9.0/battle_royale` or
+`代码分支 v24.9.0/battle_royale`. Maestro
 validates that value, clones or fetches it for that Story, and directs Codex to
 create its Story-specific working branch from it. If the line is absent or
 invalid, the configured integration branch is the fallback. Automation never
